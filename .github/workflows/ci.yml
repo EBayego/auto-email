@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  NEXT_TELEMETRY_DISABLED: '1'
+  DO_NOT_TRACK: '1'
+
+jobs:
+  quality:
+    name: Calidad e integración
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Configurar npm
+        run: npm install --global npm@11.17.0
+
+      - name: Instalar dependencias del lockfile
+        run: npm ci
+
+      - name: Exigir pruebas para cambios de negocio
+        if: github.event_name == 'pull_request'
+        run: npm run test:changes
+        env:
+          TEST_BASE_REF: ${{ github.event.pull_request.base.sha }}
+
+      - name: Formato, lint, tipos, pruebas unitarias y compilación
+        run: npm run check
+
+      - name: Arrancar Supabase local con las migraciones
+        run: npm run db:start -- --exclude studio,postgres-meta > /dev/null
+
+      - name: Verificar SQL y aislamiento por usuario
+        run: npm run db:check
+
+      - name: Pruebas de integración de la aplicación
+        run: npm run test:integration
+
+      - name: Guardar informe de cobertura
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: unit-coverage
+          path: coverage/unit/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Detener Supabase local
+        if: always()
+        run: npm run db:stop

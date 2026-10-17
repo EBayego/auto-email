@@ -15,7 +15,8 @@ select is((select min(max_daily_drafts) from public.user_settings), 30, 'Límite
 
 insert into auth.users (id, aud, role, email)
 values ('00000000-0000-4000-8000-000000000003', 'authenticated', 'authenticated', 'mail006-test@example.invalid');
-insert into public.users (id) values ('00000000-0000-4000-8000-000000000003');
+insert into public.users (id) values ('00000000-0000-4000-8000-000000000003')
+on conflict (id) do nothing;
 
 select throws_ok($q$
   insert into public.users (id) values ('00000000-0000-4000-8000-000000000004')
@@ -143,7 +144,8 @@ set local role service_role;
 select is((select count(*) from public.users), 3::bigint, 'El backend tiene acceso explícito para gestionar identidades');
 reset role;
 
-insert into public.user_settings (user_id) values ('00000000-0000-4000-8000-000000000003');
+insert into public.user_settings (user_id) values ('00000000-0000-4000-8000-000000000003')
+on conflict (user_id) do nothing;
 insert into public.gmail_accounts (id, user_id, email)
 values ('10000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000003', 'mail006-test@example.invalid');
 insert into public.processing_runs (user_id, gmail_account_id)

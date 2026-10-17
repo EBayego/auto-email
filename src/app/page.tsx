@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 export default function HomePage() {
   return (
     <main className="welcome">
@@ -13,10 +15,9 @@ export default function HomePage() {
           Un espacio para preparar respuestas con tu estilo y revisarlas en
           Gmail antes de enviarlas.
         </p>
-        <p className="status">
-          <span className="status-dot" aria-hidden="true" />
-          Base del proyecto lista. Integraciones pendientes.
-        </p>
+        <Link className="button welcome-action" href="/login">
+          Acceder a mi cuenta
+        </Link>
       </section>
     </main>
   );
