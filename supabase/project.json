@@ -1,0 +1,9 @@
+{
+  "name": "auto-email",
+  "projectRef": "zbcexekelujsqkkynsog",
+  "organization": "Ebia",
+  "region": "eu-west-1",
+  "postgresMajorVersion": 17,
+  "url": "https://zbcexekelujsqkkynsog.supabase.co",
+  "sharedEnvironments": ["development", "staging", "production"]
+}

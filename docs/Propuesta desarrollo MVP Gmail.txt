@@ -1,0 +1,298 @@
+# Cómo desarrollaría el primer MVP de tu asistente de IA para Gmail
+
+Mi propuesta sería construir un SaaS muy pequeño, pero con una arquitectura que permita convertirlo en un producto comercial sin tener que empezar de cero.
+
+Después de revisar el análisis, creo que lo más importante es demostrar tres capacidades:
+
+1. Aprender cómo escribe realmente una persona, incluyendo las diferencias entre destinatarios.
+2. Saber qué responder, utilizando el hilo de Gmail, las conversaciones anteriores y, cuando sea necesario, fuentes de información adicionales.
+3. Generar automáticamente el borrador en Gmail, de manera que el usuario únicamente tenga que revisarlo y enviarlo.
+
+No intentaría desarrollar inicialmente una alternativa a Gmail, ni una aplicación de correo propia, ni un agente autónomo capaz de enviar mensajes.
+
+La experiencia que perseguiría sería esta:
+
+> Entra un correo de un cliente. La IA reconoce el contexto, consulta la información necesaria, recuerda cómo sueles comunicarte con ese cliente y prepara la respuesta. Cuando abres Gmail, el borrador ya está escrito.
+
+Esta idea coincide con la propuesta de entrada del análisis de mercado, especialmente con la distinción entre identidad, conocimiento y autorización para actuar.&#x20;
+
+Análisis de mercado y viabilidad de una plataforma de IA que responde emails y WhatsApps con la voz .pdf
+
+
+
+## 1. La arquitectura más sencilla que utilizaría
+
+Arquitectura propuesta para un MVP con generación de borradores y revisión humana.
+
+No utilizaría fine-tuning inicialmente. Tampoco montaría una base vectorial compleja, agentes múltiples o un sistema de microservicios.
+
+Una aplicación, una base de datos, la API de Gmail y un modelo de IA son suficientes para construir y validar el núcleo del negocio.
+
+## 2. Tecnologías que elegiría
+
+| Componente               | Tecnología                  | Motivo                                    |
+| ------------------------ | --------------------------- | ----------------------------------------- |
+| Web de configuración     | Next.js + TypeScript        | Frontend y API en un mismo proyecto       |
+| Integración Gmail        | Gmail API + OAuth 2.0       | Acceso oficial a correos y borradores     |
+| IA                       | OpenAI API                  | Análisis de estilo y generación           |
+| Base de datos            | Supabase PostgreSQL         | Usuarios, estilos, ejemplos y seguimiento |
+| Búsqueda semántica       | pgvector (más adelante)     | Recuperar ejemplos parecidos              |
+| Procesamiento automático | Worker Node.js + cron       | Revisar correos periódicamente            |
+| Despliegue               | VPS o plataforma gestionada | Ejecutar el backend sin complicaciones    |
+
+Como ya dispones de Supabase, acceso a la API de OpenAI e infraestructura propia, aprovecharía esos recursos.
+
+Aunque tienes experiencia con Go y Java, para este proyecto independiente elegiría TypeScript de extremo a extremo. La razón no es que sea intrínsecamente mejor, sino que permite desarrollar la interfaz, las integraciones y la lógica del backend con un único lenguaje y muy pocas piezas.
+
+Tampoco utilizaría n8n como motor principal del producto. Puede servir para probar rápidamente un flujo, pero prefiero código propio para controlar la lógica de negocio, los permisos, las pruebas y el aprendizaje del estilo.
+
+## 3. Cómo funcionaría el MVP, paso a paso
+
+Paso 1. El usuario conecta Gmail
+
+Mediante Google OAuth 2.0, autoriza la aplicación a consultar el correo y preparar borradores. El backend conserva las credenciales necesarias de forma cifrada para poder trabajar aunque el usuario cierre la web.
+
+Inicialmente, probaría con una única cuenta.
+
+Paso 2. La IA aprende cómo escribe
+
+Recupera, por ejemplo, entre 200 y 500 correos enviados seleccionados. Elimina firmas, respuestas citadas y mensajes automáticos. Analiza vocabulario, formalidad, estructura, longitud y cómo varía la comunicación con distintos destinatarios.
+
+Genera un perfil de estilo y conserva ejemplos representativos. No necesita entrenar un modelo nuevo.
+
+Paso 3. Detecta correos nuevos
+
+Cada pocos minutos revisa si existen conversaciones nuevas que requieren contestación. Descarta newsletters, notificaciones automáticas y conversaciones ya respondidas.
+
+Recupera el hilo completo y comprueba si existe ya un borrador para evitar duplicados.
+
+Paso 4. Busca el contexto apropiado
+
+Recupera el historial relevante con ese contacto y ejemplos de respuestas similares del usuario. Si necesita información documental, consulta la fuente autorizada que corresponda.
+
+Si faltan datos importantes, se abstiene de inventarlos.
+
+Paso 5. Prepara el borrador
+
+El modelo recibe el mensaje, el contexto, las instrucciones del usuario, las fuentes y los ejemplos de estilo.
+
+El resultado se guarda mediante `users.drafts.create` en el mismo hilo de Gmail. Para que Gmail lo asocie correctamente, hay que conservar `threadId`, asunto y cabeceras de respuesta.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://developers.google.com\&sz=32)
+
+Google for Developers
+
++1
+
+
+
+Paso 6. Aprende de las correcciones
+
+Si el usuario edita el borrador y lo envía, la aplicación compara la propuesta original con el mensaje final.
+
+Esas diferencias permiten mejorar progresivamente su estilo, sin tener que entrenar de nuevo el modelo.
+
+### La parte más importante: cómo aprender el estilo
+
+Aquí invertiría más trabajo que en la interfaz.
+
+El análisis recomienda un Style Memory con características explícitas, ejemplos históricos, preferencias aprendidas y patrones por destinatario. Me parece acertado para la primera versión.&#x20;
+
+Análisis de mercado y viabilidad de una plataforma de IA que responde emails y WhatsApps con la voz .pdf
+
+
+
+En lugar de un prompt gigante con cientos de correos, usaría dos niveles de memoria:
+
+Memoria general, que describe cómo escribe habitualmente el usuario, y memoria contextual, que recupera ejemplos adecuados para la relación y la conversación actual.
+
+Por ejemplo, cuando llega un correo de un cliente habitual, el sistema podría recuperar tres respuestas anteriores dirigidas a ese cliente y otras dos relacionadas con el mismo tipo de solicitud. Si no hay suficientes antecedentes, utiliza ejemplos de una categoría parecida.
+
+Esto es más práctico que pasar todo el historial al modelo y permite empezar sin embeddings. Cuando haya volumen, incorporaría pgvector para buscar ejemplos semánticamente similares.
+
+## 4. Qué incluiría realmente en la primera versión
+
+Mi propuesta es recortar funciones, pero no eliminar la característica que justifica pagar por el producto.
+
+| Funcionalidad                  | MVP inicial                      |
+| ------------------------------ | -------------------------------- |
+| Conectar cuenta Gmail          | &#x20;Sí                         |
+| Analizar historial enviado     | &#x20;Sí                         |
+| Perfil de estilo individual    | &#x20;Sí                         |
+| Adaptar estilo al destinatario | &#x20;Sí, básico                 |
+| Contexto histórico de Gmail    | &#x20;Sí                         |
+| Borradores automáticos         | &#x20;Sí                         |
+| Instrucciones personalizadas   | &#x20;Sí                         |
+| Consulta de documentos         | &#x20;Sí, archivos seleccionados |
+| Google Drive integrado         | &#x20;Segunda iteración          |
+| Panel de estadísticas          | &#x20;Básico al principio        |
+| Envío automático               | &#x20;No                         |
+| Multiusuario empresarial       | &#x20;No inicialmente            |
+| Constructor visual de agentes  | &#x20;No                         |
+| Integraciones CRM/ERP          | &#x20;No                         |
+
+En concreto, permitiría subir unos cuantos documentos de empresa directamente a la aplicación antes de integrar Google Drive.
+
+Así puedes demostrar que la IA utiliza conocimiento externo sin introducir otra conexión OAuth, sincronización de carpetas ni problemas adicionales de permisos desde el primer día.
+
+Más adelante, Drive sustituiría esa carga manual por una conexión que respete los permisos originales de los documentos.
+
+## 5. Plan de desarrollo que seguiría
+
+Suponiendo que desarrollas principalmente tú y utilizas Codex para acelerar la implementación, plantearía este calendario orientativo:
+
+| Fase                        | Duración estimada | Resultado                                       |
+| --------------------------- | ----------------- | ----------------------------------------------- |
+| 1. Prueba de concepto       | 2–4 días          | Gmail conectado y primeros borradores generados |
+| 2. Aprendizaje de estilo    | 4–6 días          | Perfiles y ejemplos históricos contextualizados |
+| 3. Backend automatizado     | 4–6 días          | Detección, clasificación y creación automática  |
+| 4. Conocimiento externo     | 3–5 días          | Respuestas fundamentadas en documentos          |
+| 5. Interfaz y configuración | 4–6 días          | Onboarding e instrucciones por usuario          |
+| 6. Pruebas con usuarios     | 1–2 semanas       | Medición de calidad y corrección de problemas   |
+
+Estimaciones de trabajo efectivo, no plazos garantizados. No incluyen la verificación pública de Google.
+
+### Lo primero que programaría
+
+Empezaría con una prueba de extremo a extremo, sin frontend ni base de datos de producción:
+
+Primer prototipo funcional
+
+2–4 días
+
+Un script de TypeScript ejecutado desde tu ordenador o VPS que:
+
+1\. Se autentica en una cuenta Gmail de prueba.
+
+2\. Recupera una muestra de mensajes enviados y crea un perfil de escritura.
+
+3\. Selecciona un correo recibido que todavía no hayas respondido.
+
+4\. Recupera el hilo y algunos ejemplos de respuestas anteriores.
+
+5\. Llama a OpenAI para preparar la respuesta.
+
+6\. Crea el borrador en Gmail, sin enviarlo.
+
+Resultado: abres Gmail y encuentras una respuesta preparada con tu estilo.
+
+Este prototipo te permitiría comprobar en pocos días si realmente consigues imitar el estilo con suficiente calidad. Si las respuestas no convencen, puedes mejorar el motor sin haber perdido tiempo desarrollando pantallas, suscripciones o un sistema complejo.
+
+### Después convertiría el script en una aplicación
+
+Mantendría una estructura de proyecto sencilla:
+
+```
+email-assistant/
+├── src/
+│   ├── app/                  # Next.js
+│   ├── modules/
+│   │   ├── gmail/            # OAuth, lectura y drafts
+│   │   ├── style/            # Aprendizaje y ejemplos
+│   │   ├── knowledge/        # Documentación
+│   │   ├── generation/       # IA y prompts
+│   │   └── workflows/        # Orquestación y reglas
+│   ├── worker/               # Procesamiento periódico
+│   └── db/                   # Acceso a Supabase
+├── tests/
+└── package.json
+```
+
+Utilizaría un único repositorio y separaría los módulos para que cada parte pueda evolucionar independientemente.
+
+El worker podría consultar Gmail cada 2–5 minutos durante las pruebas. Cuando necesites más cuentas y menor latencia, pasarías a las notificaciones mediante Google Cloud Pub/Sub y `history.list`, que es el mecanismo oficial para detectar cambios sin consultar continuamente el buzón.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://developers.google.com\&sz=32)
+
+Google for Developers
+
++1
+
+
+
+Desde el principio incluiría identificadores por usuario y organización, control de duplicados, registro de errores, aislamiento de datos y políticas que impidan envíos automáticos. También trataría el contenido de emails y documentos como información no confiable, nunca como instrucciones que la IA deba ejecutar.
+
+## 6. Hay una dificultad importante: los permisos de Google
+
+Este punto lo resolvería antes de construir demasiado producto.
+
+Para leer el contenido de los emails y crear borradores mediante una aplicación externa puedes utilizar los permisos OAuth `gmail.readonly` y `gmail.compose`. Ambos son permisos restringidos, según Google. Otra alternativa es `gmail.modify`, pero concede capacidades adicionales sobre el buzón.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://developers.google.com\&sz=32)
+
+Google for Developers
+
++1
+
+
+
+La consecuencia práctica es que:
+
+- Puedes desarrollar y probar con cuentas autorizadas sin tener que completar previamente todo el proceso de publicación.
+- Para ofrecer el producto públicamente tendrás que abordar la verificación OAuth y posiblemente una evaluación de seguridad externa. Si los datos de Gmail pasan por servidores de terceros, Google establece requisitos de evaluación de seguridad para los accesos restringidos, salvo las excepciones aplicables.
+- En aplicaciones externas en modo de pruebas hay un máximo de 100 usuarios de prueba y los refresh tokens suelen caducar a los 7 días.&#x20;
+
+  [image](https://www.google.com/s2/favicons?domain=https://developers.google.com\&sz=32)
+
+  Google for Developers
+
+  +2
+
+
+
+Esto puede resultar más costoso y lento que construir el MVP técnico.
+
+Por ello, validaría primero con una cuenta propia de prueba y unas pocas cuentas piloto expresamente autorizadas. En paralelo, investigaría la verificación, los requisitos RGPD, la conservación de datos y los contratos de tratamiento con los proveedores.
+
+No tomaría la decisión de lanzar comercialmente hasta tener razonablemente despejado este obstáculo.
+
+## 7. Cómo sabría si merece la pena continuar
+
+No utilizaría como principal métrica cuántos borradores consigue generar.
+
+Lo que demostraría valor comercial es cuánto trabajo real evita al usuario sin introducir errores.
+
+Probaría el sistema primero con 30–50 emails históricos, ocultando las respuestas originales para evaluar qué habría producido el sistema sin conocerlas. Después, lo probaría en tiempo real con dos o tres profesionales del mismo sector.
+
+Mediría:
+
+| Métrica                             | Qué queremos comprobar                                |
+| ----------------------------------- | ----------------------------------------------------- |
+| Aceptación sin cambios              | Si realmente se parece a lo que escribiría el usuario |
+| Grado de edición                    | Cuánto trabajo queda después de generar la respuesta  |
+| Precisión factual                   | Si utiliza correctamente los datos disponibles        |
+| Abstenciones correctas              | Si evita contestar cuando desconoce información       |
+| Tiempo ahorrado                     | Si el producto aporta valor económico                 |
+| Correos correctamente seleccionados | Si sabe cuáles requieren respuesta                    |
+
+No pondría autoenvío hasta que esos resultados fueran suficientemente buenos, por tipo de conversación, durante varias semanas.
+
+## 8. Mi recomendación sobre dónde concentrar el esfuerzo
+
+Prioridades de inversión de desarrollo
+
+Calidad y contexto de las respuestas
+
+40%
+
+Aprendizaje del estilo personal
+
+25%
+
+Integración Gmail y automatización
+
+20%
+
+Interfaz, onboarding y estadísticas
+
+15%
+
+Distribución orientativa del esfuerzo, no estimación de costes.
+
+Una interfaz muy bonita no será lo que convenza al primer cliente. Lo convencerá abrir diez correos y encontrar nueve respuestas realmente útiles, adaptadas a su forma de trabajar y con información correcta.
+
+La primera versión comercial que intentaría validar sería: Gmail + estilo individual + historial contextual + documentación autorizada + borradores automáticos.
+
+Y empezaría hoy con una única prueba técnica: conseguir que un script lea el historial de una cuenta, aprenda su estilo y deje una respuesta convincente en un borrador real de Gmail.
+
+Si ese pequeño flujo funciona bien, ya tienes el núcleo del producto. Todo lo demás se puede construir progresivamente alrededor de él.

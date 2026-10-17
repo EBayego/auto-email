@@ -1,0 +1,17 @@
+/node_modules/
+/.next/
+/out/
+/coverage/
+/.cache/
+/next-env.d.ts
+/src/db/database.types.ts.tmp
+*.tsbuildinfo
+*.log
+.env*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+client_secret*.json
