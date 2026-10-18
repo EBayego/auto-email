@@ -8,6 +8,7 @@ import type {
   TextGenerationResult,
 } from '@/providers/contracts';
 import type { ProviderError } from '@/providers/errors';
+import { withMessageQueries } from '@/providers/gmail-messages';
 
 type Outcome<T> = { result: T } | { error: ProviderError };
 type Read = { resource: GmailReadResource } & Outcome<unknown>;
@@ -32,7 +33,7 @@ export function createProviderMocks(options: MockOptions = {}) {
   const textQueue = [...(options.text ?? [])];
   const reads = [...(options.reads ?? [])];
   const drafts = [...(options.drafts ?? [])];
-  const gmailClient = {
+  const gmailClient = withMessageQueries({
     get: vi.fn<GmailClient['get']>(async (resource) => {
       if (reads[0]?.resource !== resource)
         throw new Error(
@@ -41,7 +42,7 @@ export function createProviderMocks(options: MockOptions = {}) {
       return consume(reads);
     }),
     createDraft: vi.fn<GmailClient['createDraft']>(async () => consume(drafts)),
-  } satisfies GmailClient;
+  });
   const providers = {
     text: {
       generate: vi.fn<TextGenerationClient['generate']>(async () =>
@@ -49,6 +50,19 @@ export function createProviderMocks(options: MockOptions = {}) {
       ),
     },
     googleAuthorization: {
+      refreshAccessToken: vi.fn<
+        GoogleAuthorizationClient['refreshAccessToken']
+      >(async () => {
+        throw new Error('La prueba debe configurar la renovación OAuth.');
+      }),
+      revokeToken: vi.fn<GoogleAuthorizationClient['revokeToken']>(async () => {
+        throw new Error('La prueba debe configurar la revocación OAuth.');
+      }),
+      exchangeCode: vi.fn<GoogleAuthorizationClient['exchangeCode']>(
+        async () => {
+          throw new Error('La prueba debe configurar el intercambio OAuth.');
+        },
+      ),
       getAuthorizationUrl: vi.fn<
         GoogleAuthorizationClient['getAuthorizationUrl']
       >(() => {

@@ -46,6 +46,7 @@ export type ServerConfig = {
 } & (
   | {
       providerMode: 'live';
+      gmail: { tokenEncryptionKey: SecretValue };
       openai: {
         apiKey: SecretValue;
         model: string;
@@ -167,6 +168,7 @@ export function readServerConfig(env: Environment = process.env): ServerConfig {
     'SUPABASE_SERVICE_ROLE_KEY',
     'OPENAI_API_KEY',
     'GOOGLE_CLIENT_SECRET',
+    'GMAIL_TOKEN_ENCRYPTION_KEY',
   ]) {
     for (const prefix of ['NEXT_PUBLIC_', 'EXPO_PUBLIC_'])
       if (env[`${prefix}${name}`]) failures.push(`${prefix}${name}`);
@@ -175,6 +177,13 @@ export function readServerConfig(env: Environment = process.env): ServerConfig {
   const reasoning = env.OPENAI_REASONING_EFFORT;
   const maxOutputTokens = Number(env.OPENAI_MAX_OUTPUT_TOKENS);
   if (mode === 'live') {
+    if (
+      !/^[A-Za-z0-9+/]{43}=$/.test(env.GMAIL_TOKEN_ENCRYPTION_KEY ?? '') ||
+      Buffer.from(env.GMAIL_TOKEN_ENCRYPTION_KEY ?? '', 'base64').toString(
+        'base64',
+      ) !== env.GMAIL_TOKEN_ENCRYPTION_KEY
+    )
+      failures.push('GMAIL_TOKEN_ENCRYPTION_KEY');
     if (
       !usable(env.OPENAI_API_KEY) ||
       !/^sk-[A-Za-z0-9_-]+$/.test(env.OPENAI_API_KEY)
@@ -241,6 +250,9 @@ export function readServerConfig(env: Environment = process.env): ServerConfig {
     : {
         ...common,
         providerMode: 'live',
+        gmail: {
+          tokenEncryptionKey: new SecretValue(env.GMAIL_TOKEN_ENCRYPTION_KEY!),
+        },
         openai: {
           apiKey: new SecretValue(env.OPENAI_API_KEY!),
           model: env.OPENAI_MODEL!,

@@ -32,6 +32,12 @@ export default async function LoginPage({
           confirmaste tu correo, inicia sesión.
         </p>
       )}
+      {error === 'gmail_session' && (
+        <p role="alert" className="form-error">
+          Tu sesión ha cambiado o ha caducado. Inicia sesión y vuelve a conectar
+          Gmail.
+        </p>
+      )}
       {result.status === 'forbidden' ? (
         <>
           <p role="alert" className="form-error">

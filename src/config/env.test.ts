@@ -16,6 +16,7 @@ const valid = {
   OPENAI_MAX_OUTPUT_TOKENS: '2048',
   GOOGLE_CLIENT_ID: 'unit.apps.googleusercontent.com',
   GOOGLE_CLIENT_SECRET: 'unit-google-secret-private',
+  GMAIL_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64'),
   GOOGLE_REDIRECT_URI: 'http://localhost:3000/api/gmail/callback',
   PROVIDER_TIMEOUT_MS: '30000',
 };
@@ -42,6 +43,7 @@ describe('configuración y secretos', () => {
       valid.SUPABASE_SECRET_KEY,
       valid.OPENAI_API_KEY,
       valid.GOOGLE_CLIENT_SECRET,
+      valid.GMAIL_TOKEN_ENCRYPTION_KEY,
       'private-token',
     ])
       expect(output).not.toContain(value);
@@ -58,6 +60,7 @@ describe('configuración y secretos', () => {
     'OPENAI_MAX_OUTPUT_TOKENS',
     'GOOGLE_CLIENT_ID',
     'GOOGLE_CLIENT_SECRET',
+    'GMAIL_TOKEN_ENCRYPTION_KEY',
     'GOOGLE_REDIRECT_URI',
     'PROVIDER_TIMEOUT_MS',
   ])('rechaza %s ausente sin imprimir valores', (name) => {
@@ -85,6 +88,8 @@ describe('configuración y secretos', () => {
     },
     { NEXT_PUBLIC_OPENAI_API_KEY: 'private' },
     { EXPO_PUBLIC_GOOGLE_CLIENT_SECRET: 'private' },
+    { NEXT_PUBLIC_GMAIL_TOKEN_ENCRYPTION_KEY: 'private' },
+    { GMAIL_TOKEN_ENCRYPTION_KEY: Buffer.alloc(16).toString('base64') },
     { PROVIDER_TIMEOUT_MS: '999999' },
     { OPENAI_MAX_OUTPUT_TOKENS: '-1' },
   ])('rechaza combinaciones inseguras de entorno', (override) => {

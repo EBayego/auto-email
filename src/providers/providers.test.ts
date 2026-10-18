@@ -157,6 +157,10 @@ describe('clientes de proveedores', () => {
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
     expect(url.searchParams.get('access_type')).toBe('offline');
     expect(url.searchParams.get('scope')).toBe(gmailScopes.join(' '));
+    expect(gmailScopes).toEqual([
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/gmail.compose',
+    ]);
     expect(url.href + JSON.stringify(client)).not.toContain(
       'google-unit-private',
     );

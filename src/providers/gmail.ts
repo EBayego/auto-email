@@ -3,18 +3,61 @@ import type {
   GmailClient,
   GmailReadResource,
   GmailQuery,
+  GmailTransport,
 } from './contracts';
 import { ProviderError, providerFailure } from './errors';
+import { normalizeGmailQuery, withMessageQueries } from './gmail-messages';
 
-const queryKeys = new Set([
-  'q',
-  'pageToken',
-  'maxResults',
-  'labelIds',
-  'format',
-  'metadataHeaders',
-  'includeSpamTrash',
+const quotaReasons = new Set([
+  'rateLimitExceeded',
+  'userRateLimitExceeded',
+  'dailyLimitExceeded',
+  'quotaExceeded',
 ]);
+
+async function gmailFailure(response: Response): Promise<ProviderError> {
+  let quota = response.status === 429;
+  if (response.status === 403) {
+    try {
+      const body = await response.json();
+      quota =
+        Array.isArray(body?.error?.errors) &&
+        body.error.errors.some(
+          (item: { reason?: unknown } | null) =>
+            item &&
+            typeof item.reason === 'string' &&
+            quotaReasons.has(item.reason),
+        );
+    } catch {
+      // Error bodies are optional and never form part of the public error.
+    }
+  }
+  const code =
+    response.status === 401
+      ? 'ACCESS_TOKEN_REJECTED'
+      : quota
+        ? 'RATE_LIMITED'
+        : response.status === 403
+          ? 'PERMISSION_DENIED'
+          : response.status === 404
+            ? 'NOT_FOUND'
+            : providerFailure('google', response.status).code;
+  const retryAfter = response.headers.get('retry-after');
+  const delay =
+    retryAfter === null
+      ? NaN
+      : /^\d+$/.test(retryAfter)
+        ? Number(retryAfter) * 1000
+        : Date.parse(retryAfter) - Date.now();
+  return new ProviderError('google', code, {
+    httpStatus: response.status,
+    ...((code === 'RATE_LIMITED' || code === 'UNAVAILABLE') &&
+    Number.isSafeInteger(delay) &&
+    delay >= 0
+      ? { retryAfterMs: delay }
+      : {}),
+  });
+}
 
 export function createGmailClient(
   getAccessToken: AccessTokenProvider,
@@ -27,19 +70,18 @@ export function createGmailClient(
     query?: GmailQuery,
     body?: unknown,
   ) => {
+    const url = new URL(
+      `https://gmail.googleapis.com/gmail/v1/users/me/${resource}`,
+    );
+    for (const [key, value] of Object.entries(query ?? {})) {
+      for (const item of Array.isArray(value) ? value : [value])
+        url.searchParams.append(key, String(item));
+    }
+    // Credential/domain errors must survive intact so callers can reconnect.
+    const token = await getAccessToken();
+    if (!token || typeof token !== 'string' || /\s/.test(token))
+      throw new ProviderError('google', 'AUTHENTICATION_FAILED');
     try {
-      const url = new URL(
-        `https://gmail.googleapis.com/gmail/v1/users/me/${resource}`,
-      );
-      for (const [key, value] of Object.entries(query ?? {})) {
-        if (!queryKeys.has(key))
-          throw new ProviderError('google', 'REQUEST_REJECTED');
-        for (const item of Array.isArray(value) ? value : [value])
-          url.searchParams.append(key, String(item));
-      }
-      const token = await getAccessToken();
-      if (!token || typeof token !== 'string' || /\s/.test(token))
-        throw new ProviderError('google', 'AUTHENTICATION_FAILED');
       const response = await fetcher(url, {
         method,
         headers: {
@@ -52,7 +94,7 @@ export function createGmailClient(
         cache: 'no-store',
         redirect: 'error',
       });
-      if (!response.ok) throw providerFailure('google', response.status);
+      if (!response.ok) throw await gmailFailure(response);
       try {
         return await response.json();
       } catch {
@@ -63,23 +105,9 @@ export function createGmailClient(
       throw providerFailure('google');
     }
   };
-  return Object.freeze({
+  return withMessageQueries({
     async get(resource: GmailReadResource, query?: GmailQuery) {
-      if (
-        typeof resource !== 'string' ||
-        !/^(?:profile|messages|messages\/[A-Za-z0-9_-]+|threads\/[A-Za-z0-9_-]+)$/.test(
-          resource,
-        )
-      )
-        throw new ProviderError('google', 'REQUEST_REJECTED');
-      if (
-        query?.maxResults !== undefined &&
-        (!Number.isInteger(query.maxResults) ||
-          Number(query.maxResults) < 1 ||
-          Number(query.maxResults) > 100)
-      )
-        throw new ProviderError('google', 'REQUEST_REJECTED');
-      return request('GET', resource, query);
+      return request('GET', resource, normalizeGmailQuery(resource, query));
     },
     async createDraft(message: Parameters<GmailClient['createDraft']>[0]) {
       if (
@@ -97,5 +125,5 @@ export function createGmailClient(
         },
       });
     },
-  });
+  } satisfies GmailTransport);
 }

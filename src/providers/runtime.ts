@@ -16,7 +16,10 @@ export function createProviderClients(
   }
   return Object.freeze({
     text: createOpenAiClient(config.openai, config.timeoutMs),
-    googleAuthorization: createGoogleAuthorizationClient(config.google),
+    googleAuthorization: createGoogleAuthorizationClient(
+      config.google,
+      config.timeoutMs,
+    ),
     gmail: (getAccessToken) =>
       createGmailClient(getAccessToken, config.timeoutMs),
   });

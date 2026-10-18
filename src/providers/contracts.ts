@@ -1,3 +1,5 @@
+import type { SecretValue } from '@/config/env';
+
 export type TextGenerationInput = {
   instructions: string;
   input: string;
@@ -17,13 +19,80 @@ export type GmailReadResource =
 export type GmailQuery = Readonly<
   Record<string, string | number | boolean | readonly string[]>
 >;
-export interface GmailClient {
+export type GmailListOptions = {
+  mailbox?: 'inbox' | 'sent' | 'all';
+  labelIds?: readonly string[];
+  after?: Date;
+  before?: Date;
+  from?: string;
+  unread?: boolean;
+  maxResults?: number;
+  pageToken?: string;
+};
+export type GmailMessageReference = Readonly<{ id: string; threadId: string }>;
+export type GmailMessagePage = Readonly<{
+  messages: readonly GmailMessageReference[];
+  nextPageToken?: string;
+  resultSizeEstimate?: number;
+}>;
+export type GmailMessageFormat = 'minimal' | 'metadata' | 'full' | 'raw';
+export type GmailGetOptions = {
+  format?: GmailMessageFormat;
+  metadataHeaders?: readonly string[];
+};
+export type GmailThreadOptions = {
+  format?: Exclude<GmailMessageFormat, 'raw'>;
+  metadataHeaders?: readonly string[];
+};
+export type GmailThread = Readonly<{
+  id: string;
+  historyId?: string;
+  messages: readonly GmailMessage[];
+}>;
+export type GmailMessagePart = Readonly<{
+  partId?: string;
+  mimeType?: string;
+  filename?: string;
+  headers?: readonly Readonly<{ name: string; value: string }>[];
+  body?: Readonly<{ size?: number; data?: string; attachmentId?: string }>;
+  parts?: readonly GmailMessagePart[];
+}>;
+export type GmailMessage = GmailMessageReference &
+  Readonly<{
+    labelIds?: readonly string[];
+    snippet?: string;
+    historyId?: string;
+    internalDate?: string;
+    sizeEstimate?: number;
+    payload?: GmailMessagePart;
+    raw?: string;
+  }>;
+export interface GmailTransport {
   get(resource: GmailReadResource, query?: GmailQuery): Promise<unknown>;
   createDraft(message: { raw: string; threadId?: string }): Promise<unknown>;
 }
+export interface GmailClient extends GmailTransport {
+  listMessages(options?: GmailListOptions): Promise<GmailMessagePage>;
+  getMessage(id: string, options?: GmailGetOptions): Promise<GmailMessage>;
+  getThread(id: string, options?: GmailThreadOptions): Promise<GmailThread>;
+}
 export type AccessTokenProvider = () => Promise<string>;
+export type GoogleTokenSet = {
+  accessToken: SecretValue;
+  refreshToken: SecretValue | null;
+  scopes: readonly string[] | null;
+  expiresInSeconds: number;
+};
 export interface GoogleAuthorizationClient {
   getAuthorizationUrl(input: { state: string; codeChallenge: string }): string;
+  exchangeCode(input: { code: string; codeVerifier: string }): Promise<{
+    accessToken: SecretValue;
+    refreshToken: SecretValue | null;
+    scopes: readonly string[];
+    expiresInSeconds: number;
+  }>;
+  refreshAccessToken(refreshToken: SecretValue): Promise<GoogleTokenSet>;
+  revokeToken(token: SecretValue): Promise<void>;
 }
 export type ProviderClients = {
   text: TextGenerationClient;
