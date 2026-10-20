@@ -12,7 +12,10 @@ export async function createReplyDraftForThread(
     Parameters<typeof generateReplyForThread>[0],
     'consume' | 'gmail'
   > & {
-    gmail: Pick<GmailClient, 'getThread' | 'getMessage' | 'createDraft'>;
+    gmail: Pick<
+      GmailClient,
+      'getThread' | 'getMessage' | 'listMessages' | 'createDraft'
+    >;
     store: DraftStore;
     model: string;
   },

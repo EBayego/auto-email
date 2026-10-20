@@ -3,7 +3,7 @@ import type { GmailClient, GmailMessage } from '@/providers/contracts';
 import { ProviderError } from '@/providers/errors';
 import { EmailParseError, type NormalizedEmail } from '@/modules/gmail/email';
 import { parseGmailMessage } from '@/modules/gmail/parser';
-import { readEmailHeaders } from '@/modules/gmail/email-headers';
+import { EmailStylePreprocessor } from './email-style-preprocessor';
 
 export type SentSampleOptions = {
   mailboxAddress: string;
@@ -15,6 +15,7 @@ export type SentSampleOptions = {
   excludedLabelIds?: readonly string[];
   excludedAddresses?: readonly string[];
   excludedDomains?: readonly string[];
+  includeRecipientContext?: boolean;
 };
 export type StyleSampleMessage = Readonly<{
   id: string;
@@ -23,6 +24,11 @@ export type StyleSampleMessage = Readonly<{
   wordCount: number;
   length: 'short' | 'medium' | 'long';
   kind: 'reply' | 'new';
+  context?: Readonly<{
+    recipient: string;
+    sentAt: string;
+    subject?: string | null;
+  }>;
 }>;
 export class SentSampleError extends Error {
   constructor(
@@ -47,7 +53,7 @@ const exclusionReasons = [
   'DUPLICATE_CONTENT',
 ] as const;
 type Exclusion = (typeof exclusionReasons)[number];
-const metadataHeaders = [
+export const sentSampleMetadataHeaders = [
   'From',
   'To',
   'Cc',
@@ -98,6 +104,8 @@ export function resolveSentSampleOptions(
     !list(input.excludedAddresses, validAddress) ||
     !list(input.excludedDomains, domain) ||
     !list(input.excludedLabelIds, safeId) ||
+    (input.includeRecipientContext !== undefined &&
+      typeof input.includeRecipientContext !== 'boolean') ||
     !Number.isInteger(targetSize) ||
     targetSize < 200 ||
     targetSize > 500 ||
@@ -138,8 +146,9 @@ export function resolveSentSampleOptions(
   };
 }
 type Options = ReturnType<typeof resolveSentSampleOptions>;
+const stylePreprocessor = new EmailStylePreprocessor();
 
-function metadataExclusion(
+export function sentSampleMetadataExclusion(
   raw: GmailMessage,
   email: NormalizedEmail,
   options: Options,
@@ -184,26 +193,7 @@ function metadataExclusion(
     })
   )
     return 'EXCLUDED_CONTACT';
-  const headers = readEmailHeaders(raw.payload?.headers, new Set());
-  if (
-    headers
-      .all('auto-submitted')
-      .some((value) => value.toLowerCase().split(';')[0].trim() !== 'no') ||
-    headers
-      .all('precedence')
-      .some((value) => /^(?:bulk|junk|list)$/i.test(value)) ||
-    ['list-id', 'list-unsubscribe', 'x-autoreply', 'x-autorespond'].some(
-      (name) => headers.all(name).length,
-    ) ||
-    contacts.some(({ address }) =>
-      /^(?:no[._-]?reply|do[._-]?not[._-]?reply|mailer-daemon)(?:[+._-]|@)/i.test(
-        address,
-      ),
-    ) ||
-    /^(?:(?:re|aw):\s*)*(?:automatic reply|auto(?:matic)?[ -]?response|out of (?:the )?office|respuesta autom[aá]tica|fuera de la oficina|abwesenheitsnotiz)\b/i.test(
-      email.subject ?? '',
-    )
-  )
+  if (stylePreprocessor.metadataExclusion(email, raw.payload?.headers))
     return 'AUTOMATED';
   if (/^(?:(?:re|aw):\s*)*(?:fw|fwd|rv|tr|wg):/i.test(email.subject ?? ''))
     return 'FORWARDED';
@@ -345,7 +335,7 @@ export async function prepareSentSample(
           try {
             const rawMetadata = await client.getMessage(ref.id, {
               format: 'metadata',
-              metadataHeaders,
+              metadataHeaders: sentSampleMetadataHeaders,
             });
             if (
               rawMetadata.id !== ref.id ||
@@ -353,7 +343,11 @@ export async function prepareSentSample(
             )
               throw new EmailParseError('INVALID_MESSAGE');
             const metadata = await parseGmailMessage(rawMetadata);
-            let reason = metadataExclusion(rawMetadata, metadata, options);
+            let reason = sentSampleMetadataExclusion(
+              rawMetadata,
+              metadata,
+              options,
+            );
             if (reason) {
               excluded[reason]++;
               continue;
@@ -368,7 +362,7 @@ export async function prepareSentSample(
             if (raw.id !== ref.id || raw.threadId !== ref.threadId)
               throw new EmailParseError('INVALID_MESSAGE');
             const email = await parseGmailMessage(raw);
-            reason = metadataExclusion(raw, email, options);
+            reason = sentSampleMetadataExclusion(raw, email, options);
             if (reason) {
               excluded[reason]++;
               continue;
@@ -380,18 +374,24 @@ export async function prepareSentSample(
               excluded.INCOMPLETE_BODY++;
               continue;
             }
+            const preprocessed = stylePreprocessor.preprocess(
+              email,
+              raw.payload?.headers,
+            );
+            if (preprocessed.exclusion) {
+              excluded[preprocessed.exclusion]++;
+              continue;
+            }
             if (
               email.attachments.some(
                 (part) => part.mimeType === 'message/rfc822',
               ) ||
-              /^\s*(?:-+\s*)?(?:forwarded message|mensaje reenviado|begin forwarded message)\b/im.test(
-                email.bodyText,
-              )
+              preprocessed.hasForwardedContent
             ) {
               excluded.FORWARDED++;
               continue;
             }
-            const text = email.authoredText;
+            const text = preprocessed.authoredText;
             const wordCount =
               text.match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu)?.length ?? 0;
             if (wordCount < 8) {
@@ -426,6 +426,19 @@ export async function prepareSentSample(
                 threadId: ref.threadId,
                 authoredText: text,
                 wordCount,
+                ...(input.includeRecipientContext &&
+                email.to.length === 1 &&
+                !email.cc.length &&
+                !email.bcc.length &&
+                !options.authors.has(email.to[0].address.toLowerCase())
+                  ? {
+                      context: {
+                        recipient: email.to[0].address.toLowerCase(),
+                        sentAt: email.receivedAt!,
+                        subject: email.subject,
+                      },
+                    }
+                  : {}),
                 length:
                   wordCount < 50
                     ? 'short'

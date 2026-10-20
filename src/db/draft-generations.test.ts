@@ -88,7 +88,7 @@ describe('registro de borradores con propietario y reserva persistente', () => {
       user_id: profileWork.userId,
       gmail_account_id: profileWork.gmailAccountId,
       target_message_id: 'target21',
-      prompt_version: 'mail020-v2',
+      prompt_version: 'mail028-v2',
     });
     expect(JSON.stringify(payload)).not.toMatch(
       /private|bodyText|recipient|raw/,

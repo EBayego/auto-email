@@ -20,6 +20,7 @@ export async function generateWritingProfile(input: {
 }) {
   let generated: Awaited<ReturnType<typeof analyzeWriting>> | undefined;
   let sampleSize = 0;
+  const sourceMessageIds: string[] = [];
   await withSavedSentSample(
     input.gmail,
     input.manifest,
@@ -27,6 +28,7 @@ export async function generateWritingProfile(input: {
     async (messages) => {
       sampleSize = messages.length;
       if (!sampleSize) throw new WritingProfileError('EMPTY_SAMPLE');
+      sourceMessageIds.push(...messages.map((message) => message.id));
       generated = await analyzeWriting(input.text, messages);
     },
     input.now,
@@ -41,6 +43,7 @@ export async function generateWritingProfile(input: {
     ...generated,
     model: input.model,
     sampleSize,
+    sourceMessageIds,
     warnings,
   });
 }

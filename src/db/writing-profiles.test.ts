@@ -6,6 +6,7 @@ import {
   profileWork,
   writingProfileFixture,
   writingProfileRow,
+  legacyWritingProfileFixture,
 } from '../../tests/fixtures/writing-profile';
 vi.mock('./repositories', () => ({ createOwnerRepositories: vi.fn() }));
 const user = vi.fn();
@@ -35,6 +36,7 @@ const generation = () => ({
   inputTokens: 100,
   outputTokens: 80,
   warnings: ['BELOW_RECOMMENDED_SIZE' as const],
+  sourceMessageIds: ['sent0'],
 });
 describe('repositorio de perfiles aislado por propietario', () => {
   beforeEach(() => {
@@ -77,10 +79,16 @@ describe('repositorio de perfiles aislado por propietario', () => {
       profile: writingProfileFixture(),
       review_status: 'UNREVIEWED',
       reviewed_at: null,
+      origin: 'SENT_HISTORY',
+      source_message_ids: ['sent0'],
+      prompt_version: 'mail024-v2',
     });
     expect(payload.revision).not.toBe(writingProfileRow().revision);
     expect(JSON.stringify(payload)).not.toContain('private');
-    expect(conflict).toEqual({ onConflict: 'gmail_account_id' });
+    expect(conflict).toEqual({
+      onConflict: 'gmail_account_id,scope_kind,scope_key',
+    });
+    expect(payload).not.toHaveProperty('version');
   });
   it('rechaza cuentas ajenas o desconectadas y usuarios deshabilitados antes de escribir', async () => {
     account.mockResolvedValue(null);
@@ -110,11 +118,44 @@ describe('repositorio de perfiles aislado por propietario', () => {
       { sampleSize: 501 },
       { inputTokens: -1 },
       { model: 'bad model' },
+      { sourceMessageIds: [] },
+      { sourceMessageIds: ['sent0', 'sent0'] },
+      { sourceMessageIds: ['bad id'] },
+      { sourceMessageIds: ['<private@example.invalid>'] },
     ])
       await expect(
         repo().save({ ...generation(), ...extra }),
       ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
     expect(from).not.toHaveBeenCalled();
+  });
+  it('reutiliza perfiles antiguos con procedencia histórica incompleta y no los vuelve a guardar como nuevos', async () => {
+    maybeSingle.mockResolvedValueOnce({
+      data: {
+        ...writingProfileRow(),
+        profile: legacyWritingProfileFixture(),
+        prompt_version: 'mail018-v1',
+        source_message_ids: [],
+      },
+      error: null,
+    });
+    expect((await repo().get())?.profile.schema_version).toBe(1);
+    await expect(
+      repo().save({ ...generation(), profile: legacyWritingProfileFixture() }),
+    ).rejects.toMatchObject({ code: 'INVALID_PROFILE' });
+    expect(query.upsert).not.toHaveBeenCalled();
+  });
+  it('rechaza metadatos incoherentes devueltos por el almacén', async () => {
+    for (const extra of [
+      { version: 0 },
+      { origin: 'OTHER_ACCOUNT' },
+      { source_message_ids: [] },
+    ]) {
+      maybeSingle.mockResolvedValueOnce({
+        data: { ...writingProfileRow(), ...extra },
+        error: null,
+      });
+      await expect(repo().get()).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+    }
   });
   it('impide confirmar una revisión antigua y limita la operación a la cuenta propietaria', async () => {
     await repo().confirm(writingProfileRow().revision);

@@ -14,6 +14,12 @@ import { WritingProfileError } from '../src/modules/identity/writing-profile';
 import { GmailCredentialError } from '../src/modules/gmail/credentials';
 import { SentSampleError } from '../src/modules/identity/sent-sample';
 import { ProviderError } from '../src/providers/errors';
+import {
+  normalizeStyleScope,
+  ContextualStyleError,
+} from '../src/modules/identity/contextual-style';
+import { createStyleRelationshipRepository } from '../src/db/style-relationships';
+import { generateContextualStyles } from '../src/poc/generate-contextual-styles';
 
 export const usage = `MAIL-018 — Perfil de escritura de la cuenta de prueba autorizada.
 Uso: npm run poc:style -- --email cuenta@gmail.com [opciones]
@@ -22,6 +28,9 @@ Uso: npm run poc:style -- --email cuenta@gmail.com [opciones]
   --show          Consulta el perfil guardado sin leer Gmail ni llamar a OpenAI.
   --alias EMAIL   Alias propio confirmado al preparar la muestra; repetible.
   --confirm UUID  Confirma manualmente la revisión mostrada tras comprobar su estilo.
+  --contexts      Analiza grupos con evidencia suficiente de la muestra guardada.
+  --recipient EMAIL | --domain DOMINIO | --relationship CATEGORIA
+                  Selecciona un perfil contextual para --show o --confirm.
   --help          Muestra esta ayuda.
 Los textos solo se procesan en memoria. Supabase guarda el perfil derivado y métricas.
 El perfil nuevo queda UNREVIEWED; --refresh reinicia la revisión.`;
@@ -38,11 +47,36 @@ export function parseStyleArgs(args: string[]) {
       confirm: { type: 'string' },
       alias: { type: 'string', multiple: true },
       help: { type: 'boolean' },
+      contexts: { type: 'boolean' },
+      recipient: { type: 'string' },
+      domain: { type: 'string' },
+      relationship: { type: 'string' },
     },
   });
   if (values.help) return { action: 'help' as const };
+  const selectors = [
+    values.recipient,
+    values.domain,
+    values.relationship,
+  ].filter((v) => v !== undefined).length;
+  const scope = normalizeStyleScope(
+    values.recipient !== undefined
+      ? { kind: 'RECIPIENT', key: values.recipient }
+      : values.domain !== undefined
+        ? { kind: 'DOMAIN', key: values.domain }
+        : values.relationship !== undefined
+          ? { kind: 'RELATIONSHIP', key: values.relationship.toUpperCase() }
+          : { kind: 'GENERAL', key: '' },
+  );
   if (
     !values.email ||
+    selectors > 1 ||
+    (values.contexts &&
+      (selectors > 0 ||
+        values.refresh ||
+        values.show ||
+        values.confirm !== undefined)) ||
+    (selectors > 0 && !values.show && !values.confirm) ||
     !/^[^\s<>@]+@[^\s<>@]+$/u.test(values.email) ||
     values.email.length > 254 ||
     (values.alias &&
@@ -54,15 +88,18 @@ export function parseStyleArgs(args: string[]) {
     throw new DataAccessError('INVALID_INPUT');
   if (values.confirm !== undefined) requireUuid(values.confirm);
   return {
-    action: values.confirm
-      ? ('confirm' as const)
-      : values.show
-        ? ('show' as const)
-        : ('generate' as const),
+    action: values.contexts
+      ? ('contexts' as const)
+      : values.confirm
+        ? ('confirm' as const)
+        : values.show
+          ? ('show' as const)
+          : ('generate' as const),
     email: values.email.toLowerCase(),
     aliases: values.alias,
     refresh: values.refresh ?? false,
     revision: values.confirm,
+    scope,
   };
 }
 
@@ -88,7 +125,45 @@ export async function main(args = process.argv.slice(2)) {
     client,
     work.userId,
     work.gmailAccountId,
+    options.scope,
   );
+  if (options.action === 'contexts') {
+    const general = await repository.get();
+    if (general?.review_status !== 'CONFIRMED')
+      throw new ContextualStyleError('GENERAL_PROFILE_REQUIRED');
+    const store = createSentSampleStore(
+      resolve(root, '.cache/poc/sent-samples'),
+    );
+    await store.purgeExpired();
+    const manifest = await store.load(work);
+    if (!manifest) throw new WritingProfileError('SAMPLE_REQUIRED');
+    const rules = await createStyleRelationshipRepository(
+      client,
+      work.userId,
+      work.gmailAccountId,
+    ).list();
+    const runtime = createWorkerRuntime(config);
+    const report = await generateContextualStyles({
+      gmail: await runtime.gmailFor(work),
+      text: runtime.providers.text,
+      manifest,
+      mailboxAddress: account.email,
+      aliases: options.aliases,
+      model: config.openai.model,
+      general,
+      rules,
+      ruleRevisions: rules.map((r) => r.revision),
+      save: (scope, input) =>
+        createWritingProfileRepository(
+          client,
+          work.userId,
+          work.gmailAccountId,
+          scope,
+        ).save(input),
+    });
+    console.log(JSON.stringify(report, null, 2));
+    return report;
+  }
   let result;
   let reused = false;
   if (options.action === 'confirm')
@@ -121,6 +196,11 @@ export async function main(args = process.argv.slice(2)) {
     JSON.stringify(
       {
         revision: result.revision,
+        version: result.version,
+        schemaVersion: result.profile.schema_version,
+        origin: result.origin,
+        scope: result.scope_kind,
+        updatedAt: result.updated_at,
         reviewStatus: result.review_status,
         reused,
         sampleSize: result.sample_size,
@@ -143,7 +223,8 @@ if (
     const code =
       error instanceof ConfigurationError
         ? error.message
-        : error instanceof DataAccessError ||
+        : error instanceof ContextualStyleError ||
+            error instanceof DataAccessError ||
             error instanceof WritingProfileError ||
             error instanceof GmailCredentialError ||
             error instanceof SentSampleError ||

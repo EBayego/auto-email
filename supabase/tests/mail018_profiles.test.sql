@@ -10,8 +10,8 @@ insert into public.gmail_accounts (id, user_id, email, status, encrypted_refresh
   ('10000000-0000-4000-8000-000000000181', '00000000-0000-4000-8000-000000000181', 'mail018-a@example.invalid', 'CONNECTED', '\x74657374', array['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.compose']),
   ('10000000-0000-4000-8000-000000000182', '00000000-0000-4000-8000-000000000182', 'mail018-b@example.invalid', 'CONNECTED', '\x74657374', array['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.compose']);
 insert into public.style_profiles (user_id, gmail_account_id, profile, model, prompt_version, sample_size, input_tokens, output_tokens) values
-  ('00000000-0000-4000-8000-000000000181', '10000000-0000-4000-8000-000000000181', '{"schema_version":1}', 'test-model', 'mail018-v1', 12, 10, 10),
-  ('00000000-0000-4000-8000-000000000182', '10000000-0000-4000-8000-000000000182', '{"schema_version":1}', 'test-model', 'mail018-v1', 12, 10, 10);
+  ('00000000-0000-4000-8000-000000000181', '10000000-0000-4000-8000-000000000181', '{"schema_version":1,"language":"es","formality":"medium","average_length":"short","preferred_greetings":[],"preferred_closings":[],"vocabulary":[],"structure":"Párrafos breves.","punctuation":"Convencional.","uses_emojis":false,"style_description":"Directo y cordial."}', 'test-model', 'mail018-v1', 12, 10, 10),
+  ('00000000-0000-4000-8000-000000000182', '10000000-0000-4000-8000-000000000182', '{"schema_version":1,"language":"es","formality":"medium","average_length":"short","preferred_greetings":[],"preferred_closings":[],"vocabulary":[],"structure":"Párrafos breves.","punctuation":"Convencional.","uses_emojis":false,"style_description":"Directo y cordial."}', 'test-model', 'mail018-v1', 12, 10, 10);
 
 grant usage on schema extensions to authenticated, anon;
 set local role authenticated;
@@ -38,7 +38,7 @@ select throws_ok('select * from public.style_profiles', '42501', null::text, 'An
 reset role;
 
 set local role service_role;
-select throws_ok($q$update public.style_profiles set user_id='00000000-0000-4000-8000-000000000181' where user_id='00000000-0000-4000-8000-000000000182'$q$, '23503', null::text, 'La FK impide cruzar propietarios incluso desde el servicio');
+select throws_ok($q$update public.style_profiles set user_id='00000000-0000-4000-8000-000000000181' where user_id='00000000-0000-4000-8000-000000000182'$q$, '23514', null::text, 'El perfil no cambia de propietario ni desde el servicio');
 select throws_ok('update public.style_profiles set sample_size=0', '23514', null::text, 'No se guarda un perfil sin muestras');
 select throws_ok('update public.style_profiles set profile=''[]''::jsonb', '23514', null::text, 'El perfil debe ser un objeto JSON');
 select throws_ok('update public.style_profiles set review_status=''CONFIRMED''', '23514', null::text, 'Una revisión confirmada tiene fecha');

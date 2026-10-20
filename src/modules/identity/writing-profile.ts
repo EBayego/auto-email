@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export class WritingProfileError extends Error {
   constructor(
     public readonly code:
@@ -12,111 +14,132 @@ export class WritingProfileError extends Error {
   }
 }
 
-const phrase = { type: 'string', minLength: 1, maxLength: 60 };
-const phrases = { type: 'array', items: phrase, maxItems: 5 };
-const properties = {
-  schema_version: { type: 'integer', enum: [1] },
-  language: {
-    type: 'string',
-    pattern: '^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$',
-    maxLength: 16,
-  },
-  formality: { type: 'string', enum: ['low', 'medium', 'high', 'mixed'] },
-  average_length: {
-    type: 'string',
-    enum: ['short', 'medium', 'long', 'mixed'],
-  },
+export const writingProfileSchemaVersion = 2;
+export const writingProfileByteLimit = 16384;
+const safeText = (max: number) =>
+  z
+    .string()
+    .min(1)
+    .max(max)
+    .refine(
+      (value) =>
+        value === value.trim() &&
+        !/[\p{Cc}\p{Cf}\p{N}<>@]|https?:|www\./iu.test(value),
+    );
+const phrase = safeText(60).refine((value) => value.split(/\s+/u).length <= 6);
+const phrases = z
+  .array(phrase)
+  .max(5)
+  .refine((items) => new Set(items).size === items.length);
+const common = {
+  language: z
+    .string()
+    .max(16)
+    .regex(/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/),
+  formality: z.enum(['low', 'medium', 'high', 'mixed']),
+  average_length: z.enum(['short', 'medium', 'long', 'mixed']),
   preferred_greetings: phrases,
   preferred_closings: phrases,
   vocabulary: phrases,
-  structure: { type: 'string', minLength: 1, maxLength: 400 },
-  punctuation: { type: 'string', minLength: 1, maxLength: 240 },
-  uses_emojis: { type: 'boolean' },
-  style_description: { type: 'string', minLength: 1, maxLength: 600 },
-} as const;
-export const writingProfileSchema = {
-  type: 'object',
-  properties,
-  required: Object.keys(properties),
-  additionalProperties: false,
+  structure: safeText(400),
+  punctuation: safeText(240),
+  uses_emojis: z.boolean(),
+  style_description: safeText(600),
 };
-export type WritingProfile = {
-  schema_version: 1;
-  language: string;
-  formality: 'low' | 'medium' | 'high' | 'mixed';
-  average_length: 'short' | 'medium' | 'long' | 'mixed';
-  preferred_greetings: string[];
-  preferred_closings: string[];
-  vocabulary: string[];
-  structure: string;
-  punctuation: string;
-  uses_emojis: boolean;
-  style_description: string;
-};
-const record = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
-const safeText = (value: unknown, max: number): value is string =>
-  typeof value === 'string' &&
-  value.length >= 1 &&
-  value.length <= max &&
-  value === value.trim() &&
-  !/[\p{Cc}\p{Cf}\p{N}<>@]|https?:|www\./iu.test(value);
+// Old profiles remain readable without inventing observations for new fields.
+export const legacyWritingProfileZodSchema = z.strictObject({
+  schema_version: z.literal(1),
+  ...common,
+});
+const observedLength = z.enum(['short', 'medium', 'long', 'mixed', 'unknown']);
+const frequency = z.enum([
+  'none',
+  'occasional',
+  'frequent',
+  'mixed',
+  'unknown',
+]);
+export const currentWritingProfileZodSchema = z.strictObject({
+  schema_version: z.literal(writingProfileSchemaVersion),
+  ...common,
+  form_of_address: z.enum([
+    'informal',
+    'formal',
+    'neutral',
+    'mixed',
+    'unknown',
+  ]),
+  tone: z.strictObject({
+    warmth: z.enum(['reserved', 'neutral', 'warm', 'mixed', 'unknown']),
+    directness: z.enum(['direct', 'balanced', 'indirect', 'mixed', 'unknown']),
+  }),
+  structure_traits: z.strictObject({
+    sentence_length: observedLength,
+    paragraph_length: observedLength,
+    lists: frequency,
+  }),
+  punctuation_traits: z.strictObject({
+    exclamations: frequency,
+    ellipses: frequency,
+    semicolons: frequency,
+  }),
+});
+export const writingProfileZodSchema = z.discriminatedUnion('schema_version', [
+  legacyWritingProfileZodSchema,
+  currentWritingProfileZodSchema,
+]);
+export type WritingProfile = z.infer<typeof writingProfileZodSchema>;
+export type CurrentWritingProfile = z.infer<
+  typeof currentWritingProfileZodSchema
+>;
+
+// The model contract comes from the same schema as runtime validation.
+export const writingProfileSchema = z.toJSONSchema(
+  currentWritingProfileZodSchema,
+  {
+    target: 'draft-7',
+  },
+);
+delete writingProfileSchema.$schema;
 
 export function validateWritingProfile(value: unknown): WritingProfile {
-  if (
-    !record(value) ||
-    Object.keys(value).length !== Object.keys(properties).length ||
-    Object.keys(properties).some((key) => !Object.hasOwn(value, key)) ||
-    value.schema_version !== 1 ||
-    typeof value.language !== 'string' ||
-    value.language.length > 16 ||
-    !/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(value.language) ||
-    !properties.formality.enum.includes(
-      value.formality as WritingProfile['formality'],
-    ) ||
-    !properties.average_length.enum.includes(
-      value.average_length as WritingProfile['average_length'],
-    ) ||
-    typeof value.uses_emojis !== 'boolean' ||
-    !safeText(value.structure, 400) ||
-    !safeText(value.punctuation, 240) ||
-    !safeText(value.style_description, 600)
-  )
-    throw new WritingProfileError('INVALID_PROFILE');
-  const list = (key: string) => {
-    const items = value[key];
+  try {
+    const result = writingProfileZodSchema.safeParse(value);
     if (
-      !Array.isArray(items) ||
-      items.length > 5 ||
-      items.some(
-        (item) => !safeText(item, 60) || item.split(/\s+/u).length > 6,
-      ) ||
-      new Set(items).size !== items.length
+      result.success &&
+      Buffer.byteLength(JSON.stringify(result.data)) <= writingProfileByteLimit
     )
-      throw new WritingProfileError('INVALID_PROFILE');
-    return [...items] as string[];
-  };
-  return {
-    schema_version: 1,
-    language: value.language,
-    formality: value.formality as WritingProfile['formality'],
-    average_length: value.average_length as WritingProfile['average_length'],
-    preferred_greetings: list('preferred_greetings'),
-    preferred_closings: list('preferred_closings'),
-    vocabulary: list('vocabulary'),
-    structure: value.structure,
-    punctuation: value.punctuation,
-    uses_emojis: value.uses_emojis,
-    style_description: value.style_description,
-  };
+      return result.data;
+  } catch {
+    // Zod errors and malformed runtime objects must not leak profile contents.
+  }
+  throw new WritingProfileError('INVALID_PROFILE');
 }
 
 export function parseWritingProfile(text: string): WritingProfile {
-  if (typeof text !== 'string' || Buffer.byteLength(text) > 8192)
+  if (
+    typeof text !== 'string' ||
+    Buffer.byteLength(text) > writingProfileByteLimit
+  )
     throw new WritingProfileError('INVALID_PROFILE');
   try {
     return validateWritingProfile(JSON.parse(text));
   } catch {
     throw new WritingProfileError('INVALID_PROFILE');
   }
+}
+
+export function validateCurrentWritingProfile(
+  value: unknown,
+): CurrentWritingProfile {
+  const profile = validateWritingProfile(value);
+  if (profile.schema_version !== writingProfileSchemaVersion)
+    throw new WritingProfileError('INVALID_PROFILE');
+  return profile;
+}
+
+export function parseCurrentWritingProfile(
+  text: string,
+): CurrentWritingProfile {
+  return validateCurrentWritingProfile(parseWritingProfile(text));
 }

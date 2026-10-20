@@ -110,6 +110,8 @@ function listQuery(options: GmailListOptions): GmailQuery {
     'after',
     'before',
     'from',
+    'to',
+    'textTerms',
     'unread',
     'maxResults',
     'pageToken',
@@ -138,16 +140,30 @@ function listQuery(options: GmailListOptions): GmailQuery {
   }
   if (options.after && options.before && options.after >= options.before)
     reject();
-  if (options.from !== undefined) {
+  for (const name of ['from', 'to'] as const) {
+    const address = options[name];
+    if (address === undefined) continue;
     if (
-      typeof options.from !== 'string' ||
-      options.from.length > 254 ||
+      typeof address !== 'string' ||
+      address.length > 254 ||
       !/^[A-Za-z0-9.!#$%&'*+/=?^_`|~-]+@[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/.test(
-        options.from,
+        address,
       )
     )
       reject();
-    search.push(`from:"${options.from}"`);
+    search.push(`${name}:"${address}"`);
+  }
+  if (options.textTerms !== undefined) {
+    if (
+      !strings(
+        options.textTerms,
+        (term) => typeof term === 'string' && /^[\p{L}]{3,32}$/u.test(term),
+        5,
+      ) ||
+      !options.textTerms.length
+    )
+      reject();
+    search.push(`{${options.textTerms.map((term) => `"${term}"`).join(' ')}}`);
   }
   if (options.unread !== undefined) {
     if (typeof options.unread !== 'boolean') reject();

@@ -29,6 +29,7 @@ export type Database = {
           user_id: string;
           verified_at: string | null;
         };
+        ComputedFields: never;
         Insert: {
           created_at?: string;
           draft_id?: string | null;
@@ -247,56 +248,139 @@ export type Database = {
           },
         ];
       };
-      style_profiles: {
+      style_preferences: {
         Row: {
           created_at: string;
           gmail_account_id: string;
-          id: string;
-          input_tokens: number;
-          model: string;
-          output_tokens: number;
-          profile: Json;
-          prompt_version: string;
-          review_status: string;
-          reviewed_at: string | null;
+          origin: string;
+          preference_key: string;
+          preference_value: string;
           revision: string;
-          sample_size: number;
+          scope_key: string;
+          scope_kind: string;
           updated_at: string;
           user_id: string;
-          warnings: string[];
         };
+        ComputedFields: never;
         Insert: {
           created_at?: string;
           gmail_account_id: string;
-          id?: string;
-          input_tokens: number;
-          model: string;
-          output_tokens: number;
-          profile: Json;
-          prompt_version: string;
-          review_status?: string;
-          reviewed_at?: string | null;
+          origin?: string;
+          preference_key: string;
+          preference_value: string;
           revision?: string;
-          sample_size: number;
+          scope_key?: string;
+          scope_kind?: string;
           updated_at?: string;
           user_id: string;
-          warnings?: string[];
         };
         Update: {
           created_at?: string;
           gmail_account_id?: string;
+          origin?: string;
+          preference_key?: string;
+          preference_value?: string;
+          revision?: string;
+          scope_key?: string;
+          scope_kind?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'style_preferences_owner_fkey';
+            columns: ['gmail_account_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'gmail_accounts';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'style_preferences_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      style_profiles: {
+        Row: {
+          context_evidence: NonNullable<Json>;
+          created_at: string;
+          generated_at: string;
+          gmail_account_id: string;
+          id: string;
+          input_tokens: number;
+          model: string;
+          origin: string;
+          output_tokens: number;
+          parent_revision: string | null;
+          profile: NonNullable<Json>;
+          prompt_version: string;
+          relationship_rule_revisions: string[];
+          review_status: string;
+          reviewed_at: string | null;
+          revision: string;
+          sample_size: number;
+          scope_key: string;
+          scope_kind: string;
+          source_message_ids: string[];
+          updated_at: string;
+          user_id: string;
+          version: number;
+          warnings: string[];
+        };
+        ComputedFields: never;
+        Insert: {
+          context_evidence?: NonNullable<Json>;
+          created_at?: string;
+          generated_at?: string;
+          gmail_account_id: string;
+          id?: string;
+          input_tokens: number;
+          model: string;
+          origin?: string;
+          output_tokens: number;
+          parent_revision?: string | null;
+          profile: NonNullable<Json>;
+          prompt_version: string;
+          relationship_rule_revisions?: string[];
+          review_status?: string;
+          reviewed_at?: string | null;
+          revision?: string;
+          sample_size: number;
+          scope_key?: string;
+          scope_kind?: string;
+          source_message_ids?: string[];
+          updated_at?: string;
+          user_id: string;
+          version?: number;
+          warnings?: string[];
+        };
+        Update: {
+          context_evidence?: NonNullable<Json>;
+          created_at?: string;
+          generated_at?: string;
+          gmail_account_id?: string;
           id?: string;
           input_tokens?: number;
           model?: string;
+          origin?: string;
           output_tokens?: number;
-          profile?: Json;
+          parent_revision?: string | null;
+          profile?: NonNullable<Json>;
           prompt_version?: string;
+          relationship_rule_revisions?: string[];
           review_status?: string;
           reviewed_at?: string | null;
           revision?: string;
           sample_size?: number;
+          scope_key?: string;
+          scope_kind?: string;
+          source_message_ids?: string[];
           updated_at?: string;
           user_id?: string;
+          version?: number;
           warnings?: string[];
         };
         Relationships: [
@@ -309,6 +393,55 @@ export type Database = {
           },
           {
             foreignKeyName: 'style_profiles_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      style_relationships: {
+        Row: {
+          category: string;
+          created_at: string;
+          gmail_account_id: string;
+          match_key: string;
+          match_kind: string;
+          revision: string;
+          updated_at: string;
+          user_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          category: string;
+          created_at?: string;
+          gmail_account_id: string;
+          match_key: string;
+          match_kind: string;
+          revision?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          category?: string;
+          created_at?: string;
+          gmail_account_id?: string;
+          match_key?: string;
+          match_kind?: string;
+          revision?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'style_relationships_owner_fkey';
+            columns: ['gmail_account_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'gmail_accounts';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'style_relationships_user_id_fkey';
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
@@ -379,7 +512,14 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      valid_style_profile_sources: {
+        Args: { expected: number; ids: string[]; legacy: boolean };
+        Returns: boolean;
+      };
+      valid_style_scope: {
+        Args: { key: string; kind: string };
+        Returns: boolean;
+      };
     };
     Enums: {
       [_ in never]: never;

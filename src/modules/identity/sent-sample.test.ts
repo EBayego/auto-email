@@ -15,6 +15,34 @@ import {
 
 const options = { mailboxAddress: sampleOwner };
 describe('MAIL-017, muestra efímera de enviados', () => {
+  it('solo expone contexto del destinatario al solicitarlo y excluye destinatarios ambiguos de la agrupación', async () => {
+    const raw = [
+      sentEmail(0),
+      withHeaders(sentEmail(1), { Cc: 'other@example.invalid' }),
+      withHeaders(sentEmail(2), { To: sampleOwner }),
+    ];
+    await prepareSentSample(
+      sentMailbox(raw),
+      options,
+      async (messages) => expect(messages.every((m) => !m.context)).toBe(true),
+      sampleNow,
+    );
+    const manifest = await prepareSentSample(
+      sentMailbox(raw),
+      { ...options, includeRecipientContext: true },
+      async (messages) => {
+        expect(messages.find((m) => m.id === 'sent0')?.context?.recipient).toBe(
+          'contact0@example.invalid',
+        );
+        expect(messages.find((m) => m.id === 'sent1')?.context).toBeUndefined();
+        expect(messages.find((m) => m.id === 'sent2')?.context).toBeUndefined();
+      },
+      sampleNow,
+    );
+    expect(JSON.stringify(manifest)).not.toMatch(
+      /recipient|contact0@example.invalid/,
+    );
+  });
   it('usa 12 meses, 200 ejemplos y un máximo de 500 candidatos', () => {
     expect(resolveSentSampleOptions(options, sampleNow)).toMatchObject({
       targetSize: 200,
@@ -263,6 +291,67 @@ describe('MAIL-017, muestra efímera de enviados', () => {
     );
     expect(small.statistics.selected).toBe(3);
     expect(small.warnings).toEqual(['BELOW_RECOMMENDED_SIZE']);
+  });
+  it('aplica limpieza avanzada antes de contar palabras y deduplicar la muestra', async () => {
+    const original =
+      'Hola, he revisado la propuesta y podemos comenzar el próximo lunes.';
+    const legal =
+      'Este mensaje contiene información confidencial dirigida exclusivamente a su destinatario. Si lo ha recibido por error, elimínelo.';
+    const result = await prepareSentSample(
+      sentMailbox([
+        sentEmail(0, {}, `${original}\n\n${legal}`),
+        sentEmail(1, {}, `${original}\n\nSent from my iPhone`),
+        sentEmail(2, {}, `Ok\n\n${legal}`),
+        sentEmail(
+          3,
+          {},
+          'Este mensaje se ha generado automáticamente. No responda a este correo.',
+        ),
+        sentEmail(
+          4,
+          {},
+          'Oferta semanal.\n\nRecibes este correo porque te has suscrito a nuestra lista. Puedes darte de baja aquí.',
+        ),
+      ]),
+      options,
+      async (messages) => {
+        expect(messages).toHaveLength(1);
+        expect(messages[0]).toMatchObject({
+          authoredText: original,
+          wordCount: 11,
+          length: 'short',
+        });
+      },
+      sampleNow,
+    );
+    expect(result.statistics).toMatchObject({
+      eligible: 1,
+      averageWords: 11,
+      excluded: { DUPLICATE_CONTENT: 1, TOO_SHORT: 1, AUTOMATED: 2 },
+    });
+    expect(JSON.stringify(result)).not.toMatch(
+      /confidencial|iPhone|Oferta semanal|authoredText/,
+    );
+  });
+  it('conserva texto propio de respuestas Outlook sin confundir el historial con un reenvío', async () => {
+    const original =
+      'Hola, he revisado la propuesta y podemos comenzar el próximo lunes.';
+    const result = await prepareSentSample(
+      sentMailbox([
+        sentEmail(
+          0,
+          {},
+          `${original}\n\n-----Original Message-----\nFrom: Other\nMensaje anterior sin prefijos.`,
+        ),
+      ]),
+      options,
+      async (messages) => {
+        expect(messages).toHaveLength(1);
+        expect(messages[0].authoredText).toBe(original);
+      },
+      sampleNow,
+    );
+    expect(result.statistics.excluded.FORWARDED).toBe(0);
   });
   it('acepta un buzón sin enviados y devuelve estadísticas vacías', async () => {
     const result = await prepareSentSample(

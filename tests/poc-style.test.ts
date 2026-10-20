@@ -70,6 +70,51 @@ describe('comando manual de perfil de escritura', () => {
       revision: writingProfileRow().revision,
     });
   });
+  it('selecciona contextos explícitos para consultar y confirmar, y permite reconstruir grupos', () => {
+    expect(
+      parseStyleArgs([
+        '--email',
+        'owner@example.invalid',
+        '--recipient',
+        'Person@Company.Invalid',
+        '--show',
+      ]),
+    ).toMatchObject({
+      action: 'show',
+      scope: { kind: 'RECIPIENT', key: 'person@company.invalid' },
+    });
+    expect(
+      parseStyleArgs(['--email', 'owner@example.invalid', '--contexts']),
+    ).toMatchObject({
+      action: 'contexts',
+      scope: { kind: 'GENERAL', key: '' },
+    });
+    expect(() =>
+      parseStyleArgs([
+        '--email',
+        'owner@example.invalid',
+        '--contexts',
+        '--refresh',
+      ]),
+    ).toThrow();
+    expect(() =>
+      parseStyleArgs([
+        '--email',
+        'owner@example.invalid',
+        '--relationship',
+        'HEALTH',
+        '--show',
+      ]),
+    ).toThrow();
+    expect(() =>
+      parseStyleArgs([
+        '--email',
+        'owner@example.invalid',
+        '--recipient',
+        'a@company.invalid',
+      ]),
+    ).toThrow();
+  });
   it.each(
     [
       [],
@@ -96,6 +141,12 @@ describe('comando manual de perfil de escritura', () => {
     expect(mocks.store).not.toHaveBeenCalled();
     expect(mocks.generate).not.toHaveBeenCalled();
     expect(JSON.parse(log.mock.calls[0][0]).reused).toBe(true);
+    expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({
+      version: 1,
+      schemaVersion: 2,
+      origin: 'SENT_HISTORY',
+      updatedAt: writingProfileRow().updated_at,
+    });
   });
   it('confirma únicamente la revisión solicitada explícitamente y no regenera', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});

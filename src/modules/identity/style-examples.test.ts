@@ -52,6 +52,41 @@ describe('ejemplos efímeros para el generador', () => {
       loadStyleExamples(client, null, { mailboxAddress: sampleOwner }, 4),
     ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
   });
+  it('limpia avisos y firmas al recuperar referencias anteriores y excluye plantillas', async () => {
+    const manifest = await prepareSentSample(
+      sentMailbox([sentEmail(0), sentEmail(1)]),
+      { mailboxAddress: sampleOwner },
+      undefined,
+      sampleNow,
+    );
+    const original =
+      'Hola, he revisado la propuesta y podemos comenzar el próximo lunes.';
+    const client = sentMailbox([
+      sentEmail(
+        0,
+        {},
+        `${original}\n\nEnviado desde Outlook para Android\n\nEste mensaje contiene información confidencial dirigida exclusivamente a su destinatario. Si lo ha recibido por error, elimínelo.`,
+      ),
+      sentEmail(
+        1,
+        {},
+        'This is an automatically generated message. Please do not reply to this email.',
+      ),
+    ]);
+    expect(
+      await loadStyleExamples(
+        client,
+        manifest,
+        { mailboxAddress: sampleOwner },
+        3,
+        sampleNow,
+      ),
+    ).toEqual([{ text: original }]);
+    expect(client.listMessages).not.toHaveBeenCalled();
+    expect(new Set(client.getMessage.mock.calls.map(([id]) => id))).toEqual(
+      new Set(['sent0', 'sent1']),
+    );
+  });
   it('acota textos largos conservando el principio y el cierre', async () => {
     const email = sentEmail(
       0,

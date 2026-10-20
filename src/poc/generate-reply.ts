@@ -12,8 +12,10 @@ import {
 } from '@/modules/response/generator';
 import { responsePromptVersion } from '@/modules/response/prompts';
 import type { SentSampleManifest } from '@/modules/identity/sent-sample';
-import { loadStyleExamples } from '@/modules/identity/style-examples';
-import { WritingProfileError } from '@/modules/identity/writing-profile';
+import {
+  createStyleExampleRetriever,
+  type StyleExampleRetriever,
+} from '@/modules/identity/style-example-retriever';
 
 export type ReplyGenerationReport = {
   selection: ManualSelectionReport;
@@ -33,11 +35,12 @@ export type ReplyGenerationReport = {
   } | null;
 };
 export async function generateReplyForThread(input: {
-  gmail: Pick<GmailClient, 'getThread' | 'getMessage'>;
+  gmail: Pick<GmailClient, 'getThread' | 'getMessage' | 'listMessages'>;
   text: TextGenerationClient;
   selection: ManualSelectionInput;
   sample?: SentSampleManifest | null;
   styleExamplesLimit?: number;
+  styleExampleRetriever?: StyleExampleRetriever;
   userInstructions?: readonly string[];
   now?: Date;
   shouldGenerate?: (context: PreparedReplyContext) => Promise<boolean>;
@@ -58,32 +61,44 @@ export async function generateReplyForThread(input: {
     async (context) => {
       if (input.shouldGenerate && !(await input.shouldGenerate(context)))
         return;
-      let examples: { text: string }[] = [];
-      try {
-        examples = await loadStyleExamples(
-          input.gmail,
-          input.sample ?? null,
-          {
+      const retriever =
+        input.styleExampleRetriever ??
+        createStyleExampleRetriever({
+          gmail: input.gmail,
+          sample: input.sample,
+          identity: {
+            accountId: context.accountId,
             mailboxAddress: input.selection.mailboxAddress,
             aliases: input.selection.aliases,
           },
-          limit,
-          input.now,
-        );
-      } catch (error) {
-        // Missing/expired references are optional. Credential and provider failures
-        // still stop the operation rather than bypassing an authorization problem.
-        if (!(
-          error instanceof WritingProfileError &&
-          error.code === 'SAMPLE_REQUIRED'
-        ))
-          throw error;
-      }
+        });
+      const examples = limit
+        ? await retriever.retrieve({
+            accountId: context.accountId,
+            recipient: context.replyTarget.to.address,
+            threadId: context.threadId,
+            subject: context.modelInput.subject,
+            text: context.modelInput.messages.find(
+              (message) => message.isTarget,
+            )!.text,
+            before: context.styleExampleBefore
+              ? new Date(context.styleExampleBefore)
+              : input.now,
+            profile: context.modelInput.style,
+            preferredMessageIds: context.styleExampleMessageIds,
+            language: context.stylePreferences?.preferences.find(
+              (p) => p.key === 'language' && p.value !== 'recipient',
+            )?.value,
+            limit,
+            now: input.now,
+          })
+        : [];
       try {
         const response = await createResponseGenerator(input.text).generate({
           conversation: context.modelInput,
           styleExamples: examples,
           userInstructions: input.userInstructions,
+          stylePreferences: context.stylePreferences?.preferences,
         });
         generation = {
           status: response.status,

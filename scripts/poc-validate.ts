@@ -6,6 +6,8 @@ import { ConfigurationError, getServerConfig } from '../src/config/env';
 import { createServiceDataClient } from '../src/db/service-client';
 import { resolvePocAccount } from '../src/db/poc-account';
 import { createWritingProfileRepository } from '../src/db/writing-profiles';
+import { createStylePreferenceRepository } from '../src/db/style-preferences';
+import { StylePreferenceError } from '../src/modules/identity/style-preferences';
 import { createSentSampleStore } from '../src/poc/sent-sample-store';
 import { createWorkerRuntime } from '../src/worker/runtime';
 import { DataAccessError } from '../src/db/errors';
@@ -131,6 +133,12 @@ export async function main(args = process.argv.slice(2)) {
       accountId: work.gmailAccountId,
       mailboxAddress: account.email,
       style: { revision: profile.revision, profile: profile.profile },
+      resolvePreferences: (recipient) =>
+        createStylePreferenceRepository(
+          client,
+          work.userId,
+          work.gmailAccountId,
+        ).resolve(recipient),
     },
     sample,
     styleExamplesLimit: options.examples,
@@ -171,7 +179,8 @@ if (
             error instanceof GmailCredentialError ||
             error instanceof ResponseGenerationError ||
             error instanceof ConversationError ||
-            error instanceof ProviderError
+            error instanceof ProviderError ||
+            error instanceof StylePreferenceError
           ? error.code
           : error instanceof PocValidationError
             ? 'INVALID_INPUT'

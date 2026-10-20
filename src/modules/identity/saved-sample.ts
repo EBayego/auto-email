@@ -12,6 +12,7 @@ export async function withSavedSentSample(
   identity: { mailboxAddress: string; aliases?: readonly string[] },
   consume: (messages: readonly StyleSampleMessage[]) => Promise<void>,
   now = new Date(),
+  options: { includeRecipientContext?: boolean } = {},
 ) {
   const seen = new Set<string>();
   if (
@@ -59,6 +60,7 @@ export async function withSavedSentSample(
     savedClient,
     {
       ...identity,
+      includeRecipientContext: options.includeRecipientContext,
       after: new Date(manifest.window.after),
       before: new Date(manifest.window.before),
       targetSize: manifest.targetSize,

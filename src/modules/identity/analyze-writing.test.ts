@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { TextGenerationClient } from '@/providers/contracts';
-import { writingProfileFixture } from '../../../tests/fixtures/writing-profile';
+import {
+  writingProfileFixture,
+  legacyWritingProfileFixture,
+} from '../../../tests/fixtures/writing-profile';
 import { analyzeWriting, writingInstructions } from './analyze-writing';
 import type { StyleSampleMessage } from './sent-sample';
 const message = (
@@ -31,7 +34,7 @@ describe('análisis de estilo con OpenAI', () => {
     expect(result.profile).toEqual(writingProfileFixture());
     const [input] = client.generate.mock.calls[0];
     expect(input.jsonSchema).toMatchObject({
-      name: 'writing_profile_v1',
+      name: 'writing_profile_v2',
       schema: { additionalProperties: false },
     });
     for (const privateValue of [
@@ -111,5 +114,17 @@ describe('análisis de estilo con OpenAI', () => {
       code: 'INVALID_PROFILE',
     });
     expect(client.generate).toHaveBeenCalledTimes(3);
+  });
+  it('rechaza salidas de una versión anterior en un análisis nuevo', async () => {
+    const client = provider();
+    client.generate.mockResolvedValueOnce({
+      text: JSON.stringify(legacyWritingProfileFixture()),
+      inputTokens: 10,
+      outputTokens: 10,
+    });
+    await expect(analyzeWriting(client, [message()])).rejects.toMatchObject({
+      code: 'INVALID_PROFILE',
+    });
+    expect(client.generate).toHaveBeenCalledOnce();
   });
 });

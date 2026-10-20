@@ -1,11 +1,125 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { writingProfileFixture } from '../../tests/fixtures/writing-profile';
 import type { GmailMessage } from '@/providers/contracts';
 import { ProviderError } from '@/providers/errors';
 import { draftFixture } from '../../tests/fixtures/drafts';
 import { createEmailFixtures } from '../../tests/fixtures/emails';
 import { createReplyDraftForThread } from './create-reply-draft';
+import {
+  sampleNow,
+  sentEmail,
+  sentMailbox,
+  withHeaders,
+} from '../../tests/fixtures/sent-emails';
 
 describe('generación y creación de un único borrador de respuesta', () => {
+  it('aplica preferencias del destinatario y cancela si se editan o eliminan antes de escribir', async () => {
+    for (const removed of [false, true]) {
+      const input = draftFixture();
+      const resolvePreferences = vi
+        .fn()
+        .mockResolvedValueOnce({
+          preferences: [{ key: 'greeting', value: 'short' }],
+          revisions: ['00000000-0000-4000-8000-000000000027'],
+        })
+        .mockResolvedValueOnce(
+          removed
+            ? { preferences: [], revisions: [] }
+            : {
+                preferences: [{ key: 'greeting', value: 'none' }],
+                revisions: ['00000000-0000-4000-8000-000000000028'],
+              },
+        );
+      const result = await createReplyDraftForThread({
+        ...input,
+        selection: { ...input.selection, resolvePreferences },
+      });
+      expect(result.draft?.status).toBe('CANCELLED');
+      expect(input.gmail.createDraft).not.toHaveBeenCalled();
+      expect(resolvePreferences).toHaveBeenCalledWith(
+        'contact@example.invalid',
+      );
+      const payload = JSON.parse(input.text.generate.mock.calls[0][0].input);
+      expect(payload.stylePreferences).toEqual([
+        { key: 'greeting', value: 'short' },
+      ]);
+      expect(JSON.stringify(payload)).not.toContain('000000000027');
+    }
+  });
+  it('integra la recuperación histórica en el borrador sin guardar cuerpos ni referencias en el registro', async () => {
+    const input = draftFixture();
+    const mailbox = sentMailbox([
+      withHeaders(sentEmail(0), { To: 'contact@example.invalid' }),
+    ]);
+    const readDraft = input.gmail.getMessage.getMockImplementation()!;
+    input.gmail.getMessage.mockImplementation((id, options) =>
+      id === 'sent0' ? mailbox.getMessage(id, options) : readDraft(id, options),
+    );
+    input.gmail.listMessages.mockResolvedValue({
+      messages: [{ id: 'sent0', threadId: 'thread0' }],
+    });
+    const result = await createReplyDraftForThread({
+      ...input,
+      now: sampleNow,
+    });
+    expect(result).toMatchObject({
+      generation: { examplesUsed: 1 },
+      draft: { status: 'CREATED', verified: true },
+    });
+    expect(
+      JSON.parse(input.text.generate.mock.calls[0][0].input).styleExamples,
+    ).toHaveLength(1);
+    expect(JSON.stringify(input.store.reserve.mock.calls)).not.toMatch(
+      /he revisado la propuesta|sent0|thread0/,
+    );
+    expect(input.gmail.createDraft).toHaveBeenCalledOnce();
+  });
+  it('usa y registra el perfil contextual y lo revalida antes de escribir', async () => {
+    const input = draftFixture();
+    const revision = '00000000-0000-4000-8000-000000000025';
+    const style = {
+      revision,
+      profile: { ...writingProfileFixture(), formality: 'high' as const },
+      scopeKind: 'RECIPIENT' as const,
+    };
+    const resolver = vi.fn().mockResolvedValue(style);
+    const result = await createReplyDraftForThread({
+      ...input,
+      selection: { ...input.selection, resolveStyle: resolver },
+    });
+    expect(result.draft?.status).toBe('CREATED');
+    expect(resolver).toHaveBeenCalledTimes(2);
+    expect(input.store.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({ styleRevision: revision }),
+    );
+    expect(
+      JSON.parse(input.text.generate.mock.calls[0][0].input).conversation.style
+        .formality,
+    ).toBe('high');
+    expect(result.selection).toMatchObject({
+      styleRevision: revision,
+      styleScope: 'RECIPIENT',
+    });
+  });
+  it('cancela la escritura si el perfil cambia durante la generación', async () => {
+    const input = draftFixture();
+    const resolver = vi
+      .fn()
+      .mockResolvedValueOnce({
+        revision: '00000000-0000-4000-8000-000000000025',
+        profile: writingProfileFixture(),
+      })
+      .mockResolvedValueOnce({
+        revision: '00000000-0000-4000-8000-000000000026',
+        profile: writingProfileFixture(),
+      });
+    const result = await createReplyDraftForThread({
+      ...input,
+      selection: { ...input.selection, resolveStyle: resolver },
+    });
+    expect(result.draft?.status).toBe('CANCELLED');
+    expect(input.gmail.createDraft).not.toHaveBeenCalled();
+  });
   it('acepta que Gmail reemplace el Message-ID propio conservando las cabeceras de respuesta', async () => {
     const input = draftFixture();
     const read = input.gmail.getMessage.getMockImplementation()!;

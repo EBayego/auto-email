@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   gmailFor: vi.fn(),
   getThread: vi.fn(),
   getMessage: vi.fn(),
+  listMessages: vi.fn(),
   generate: vi.fn(),
   createDraft: vi.fn(),
   load: vi.fn(),
@@ -24,8 +25,16 @@ vi.mock('@/db/service-client', () => ({
   createServiceDataClient: vi.fn(() => ({})),
 }));
 vi.mock('@/db/poc-account', () => ({ resolvePocAccount: mocks.account }));
+vi.mock('@/db/style-preferences', () => ({
+  createStylePreferenceRepository: vi.fn(() => ({
+    resolve: vi.fn(async () => ({ preferences: [], revisions: [] })),
+  })),
+}));
 vi.mock('@/db/writing-profiles', () => ({
   createWritingProfileRepository: vi.fn(() => ({ get: mocks.style })),
+}));
+vi.mock('@/db/contextual-styles', () => ({
+  selectContextualWritingProfile: (...args: unknown[]) => mocks.style(...args),
 }));
 vi.mock('@/poc/sent-sample-store', () => ({
   createSentSampleStore: vi.fn(() => ({ load: mocks.load })),
@@ -53,9 +62,11 @@ describe('comando del primer generador de respuestas', () => {
       review_status: 'CONFIRMED',
     });
     mocks.load.mockResolvedValue(null);
+    mocks.listMessages.mockResolvedValue({ messages: [] });
     mocks.gmailFor.mockResolvedValue({
       getThread: mocks.getThread,
       getMessage: mocks.getMessage,
+      listMessages: mocks.listMessages,
       createDraft: mocks.createDraft,
     });
     mocks.getThread.mockResolvedValue(createEmailFixtures().pending);

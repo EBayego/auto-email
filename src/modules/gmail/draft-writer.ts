@@ -77,7 +77,7 @@ export function createDraftWriter(input: {
         id: attemptId,
         threadId: context.threadId,
         targetMessageId: context.targetMessageId,
-        styleRevision: selection.style.revision,
+        styleRevision: context.styleRevision ?? selection.style.revision,
         model: options.model,
         inputTokens: response.inputTokens,
         outputTokens: response.outputTokens,

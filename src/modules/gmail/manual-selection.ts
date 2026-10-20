@@ -11,6 +11,18 @@ import {
   type ThreadContext,
 } from './conversation';
 import { readEmailHeaders } from './email-headers';
+import type { StyleScope } from '@/modules/identity/contextual-style';
+import {
+  validateResolvedStylePreferences,
+  type ResolvedStylePreferences,
+} from '@/modules/identity/style-preferences';
+
+export type SelectedWritingStyle = Readonly<{
+  revision: string;
+  profile: WritingProfile;
+  scopeKind?: StyleScope['kind'];
+  exampleMessageIds?: readonly string[];
+}>;
 
 export const manualSelectionLimits = Object.freeze({
   messages: 20,
@@ -21,7 +33,9 @@ export type ManualSelectionInput = Omit<
   'managedDraftMessageIds'
 > & {
   threadId: string;
-  style?: Readonly<{ revision: string; profile: WritingProfile }>;
+  style?: SelectedWritingStyle;
+  resolveStyle?: (recipient: string) => Promise<SelectedWritingStyle | null>;
+  resolvePreferences?: (recipient: string) => Promise<ResolvedStylePreferences>;
 };
 export type SelectionStatus =
   | Exclude<ThreadContext['status'], 'NEEDS_CLASSIFICATION'>
@@ -50,6 +64,7 @@ export type ManualSelectionReport = {
   hasDraft: boolean;
   answeredByMessageIds: readonly string[];
   styleRevision: string | null;
+  styleScope?: StyleScope['kind'];
   warnings: 'STYLE_PROFILE_UNAVAILABLE'[];
 };
 
@@ -59,6 +74,10 @@ export type PreparedReplyContext = {
   threadId: string;
   historyId: string | null;
   targetMessageId: string;
+  styleRevision?: string;
+  styleExampleMessageIds?: readonly string[];
+  styleExampleBefore?: string;
+  stylePreferences?: ResolvedStylePreferences;
   replyTarget: {
     to: { name: string; address: string };
     subject: string | null;
@@ -84,6 +103,10 @@ export function validateManualSelection(input: ManualSelectionInput) {
     !id(input.accountId) ||
     !id(input.threadId) ||
     !address(input.mailboxAddress) ||
+    (input.resolveStyle !== undefined &&
+      typeof input.resolveStyle !== 'function') ||
+    (input.resolvePreferences !== undefined &&
+      typeof input.resolvePreferences !== 'function') ||
     (input.targetMessageId !== undefined && !id(input.targetMessageId)) ||
     (input.aliases !== undefined &&
       (!Array.isArray(input.aliases) ||
@@ -95,7 +118,18 @@ export function validateManualSelection(input: ManualSelectionInput) {
       ))
   )
     throw new ConversationError('INVALID_INPUT');
-  if (input.style) validateWritingProfile(input.style.profile);
+  if (input.style) {
+    validateWritingProfile(input.style.profile);
+    const refs = input.style.exampleMessageIds;
+    if (
+      refs !== undefined &&
+      (!Array.isArray(refs) ||
+        refs.length > 500 ||
+        refs.some((value) => !id(value)) ||
+        new Set(refs).size !== refs.length)
+    )
+      throw new ConversationError('INVALID_INPUT');
+  }
 }
 
 function automatedReason(
@@ -205,6 +239,13 @@ export async function selectPendingEmail(
   if (relevant.length > manualSelectionLimits.messages)
     review('CONTEXT_LIMIT_EXCEEDED');
   if (report.status !== 'SELECTED') return report;
+  const style = input.resolveStyle
+    ? ((await input.resolveStyle(target.from[0].address)) ?? input.style)
+    : input.style;
+  if (style)
+    validateManualSelection({ ...input, style, resolveStyle: undefined });
+  report.styleRevision = style?.revision ?? null;
+  if (style?.scopeKind) report.styleScope = style.scopeKind;
   const speakers = new Map<string, string>();
   const messages = relevant.map((message) => {
     const sender = message.from[0].address.toLowerCase();
@@ -224,7 +265,7 @@ export async function selectPendingEmail(
     schemaVersion: 1,
     subject: target.subject,
     messages,
-    style: input.style ? validateWritingProfile(input.style.profile) : null,
+    style: style ? validateWritingProfile(style.profile) : null,
   };
   try {
     const bytes = Buffer.byteLength(JSON.stringify(modelInput));
@@ -239,6 +280,18 @@ export async function selectPendingEmail(
       threadId: input.threadId,
       historyId: conversation.historyId,
       targetMessageId: target.id,
+      styleExampleBefore: target.chronologicalAt!,
+      ...(input.resolvePreferences
+        ? {
+            stylePreferences: validateResolvedStylePreferences(
+              await input.resolvePreferences(target.from[0].address),
+            ),
+          }
+        : {}),
+      ...(input.resolveStyle && style ? { styleRevision: style.revision } : {}),
+      ...(style?.exampleMessageIds
+        ? { styleExampleMessageIds: [...style.exampleMessageIds] }
+        : {}),
       replyTarget: {
         to: { ...target.from[0] },
         subject: target.subject,

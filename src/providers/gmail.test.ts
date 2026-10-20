@@ -94,6 +94,19 @@ describe('consultas de mensajes Gmail (MAIL-014)', () => {
     expect(f.url(1).searchParams.getAll('pageToken')).toHaveLength(1);
   });
 
+  it('busca enviados por destinatario y términos literales sin permitir operadores desde texto externo', async () => {
+    const f = fixture();
+    await f.client.listMessages({
+      mailbox: 'sent',
+      to: 'client+team@example.invalid',
+      textTerms: ['auditoría', 'energética'],
+    });
+    expect(f.url().searchParams.get('q')).toBe(
+      'to:"client+team@example.invalid" {"auditoría" "energética"}',
+    );
+    expect(f.url().searchParams.getAll('labelIds')).toEqual(['SENT']);
+  });
+
   it.each([{}, { messages: [] }, { resultSizeEstimate: 0 }])(
     'normaliza páginas vacías sin fabricar un total (%j)',
     async (response) => {
@@ -125,6 +138,15 @@ describe('consultas de mensajes Gmail (MAIL-014)', () => {
     { from: 'a@b\n' },
     { from: 'a@b"} OR in:sent' },
     { from: 'a@b@c' },
+    { to: 'a@b OR in:anywhere' },
+    { to: 'a@b"}' },
+    { textTerms: [] },
+    { textTerms: ['in:anywhere'] },
+    { textTerms: ['foo"}'] },
+    { textTerms: ['foo\nbar'] },
+    { textTerms: ['x'.repeat(33)] },
+    { textTerms: Array(6).fill('valid') },
+    { textTerms: 'query' },
     { unread: 'true' },
     { pageToken: '' },
     { pageToken: 'line\nbreak' },

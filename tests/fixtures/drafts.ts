@@ -65,6 +65,9 @@ export function draftFixture() {
   const thread: GmailThread = createEmailFixtures().pending;
   let saved: GmailMessage | null = null;
   const gmail = {
+    listMessages: vi
+      .fn<GmailClient['listMessages']>()
+      .mockResolvedValue({ messages: [] }),
     getThread: vi.fn<GmailClient['getThread']>().mockResolvedValue(thread),
     getMessage: vi.fn<GmailClient['getMessage']>(async () => {
       if (!saved) throw new Error('No draft created');

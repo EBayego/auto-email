@@ -9,6 +9,7 @@ export type TextGenerationResult = {
   text: string;
   inputTokens: number;
   outputTokens: number;
+  attempts?: number;
 };
 export interface TextGenerationClient {
   generate(input: TextGenerationInput): Promise<TextGenerationResult>;
@@ -25,6 +26,8 @@ export type GmailListOptions = {
   after?: Date;
   before?: Date;
   from?: string;
+  to?: string;
+  textTerms?: readonly string[];
   unread?: boolean;
   maxResults?: number;
   pageToken?: string;

@@ -1,4 +1,5 @@
 import type { PreparedReplyContext } from '@/modules/gmail/manual-selection';
+import type { StylePreference } from '@/modules/identity/style-preferences';
 
 export type ResponseWarning =
   | 'HUMAN_REVIEW_REQUIRED'
@@ -11,6 +12,7 @@ export type ResponseWarning =
   | 'NO_REPLY_REQUIRED'
   | 'LANGUAGE_MISMATCH'
   | 'UNANSWERED_QUESTION'
+  | 'STYLE_PREFERENCE_MISMATCH'
   | 'STYLE_PROFILE_UNAVAILABLE';
 export type ResponseEvidence = {
   messageIndex: number;
@@ -29,6 +31,7 @@ export type ResponseGenerationInput = {
   conversation: PreparedReplyContext['modelInput'];
   styleExamples?: readonly { text: string }[];
   userInstructions?: readonly string[];
+  stylePreferences?: readonly StylePreference[];
 };
 export type ResponseGenerationResult = GeneratedResponse & {
   inputTokens: number;

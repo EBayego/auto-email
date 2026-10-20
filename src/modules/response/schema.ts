@@ -14,6 +14,7 @@ export const modelWarnings = [
   'NO_REPLY_REQUIRED',
   'LANGUAGE_MISMATCH',
   'UNANSWERED_QUESTION',
+  'STYLE_PREFERENCE_MISMATCH',
 ] as const;
 const missing = {
   type: 'array',

@@ -20,8 +20,16 @@ vi.mock('@/db/service-client', () => ({
   createServiceDataClient: vi.fn(() => ({})),
 }));
 vi.mock('@/db/poc-account', () => ({ resolvePocAccount: mocks.account }));
+vi.mock('@/db/style-preferences', () => ({
+  createStylePreferenceRepository: vi.fn(() => ({
+    resolve: vi.fn(async () => ({ preferences: [], revisions: [] })),
+  })),
+}));
 vi.mock('@/db/writing-profiles', () => ({
   createWritingProfileRepository: vi.fn(() => ({ get: mocks.style })),
+}));
+vi.mock('@/db/contextual-styles', () => ({
+  selectContextualWritingProfile: (...args: unknown[]) => mocks.style(...args),
 }));
 vi.mock('@/db/draft-generations', () => ({
   createDraftGenerationRepository: mocks.store,

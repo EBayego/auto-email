@@ -53,6 +53,7 @@ describe('MAIL-018, Gmail → OpenAI → perfil reutilizable', () => {
     expect(f.repository.save).toHaveBeenCalledWith(
       expect.objectContaining({
         sampleSize: 2,
+        sourceMessageIds: ['sent0', 'sent1'],
         inputTokens: 100,
         outputTokens: 80,
         warnings: ['BELOW_RECOMMENDED_SIZE'],
@@ -93,6 +94,37 @@ describe('MAIL-018, Gmail → OpenAI → perfil reutilizable', () => {
       code: 'INVALID_PROFILE',
     });
     expect(f.repository.save).not.toHaveBeenCalled();
+  });
+  it('envía a OpenAI solo texto propio tras limpiar muestras guardadas', async () => {
+    const f = await fixture();
+    const original =
+      'Hola Ana, he revisado tu propuesta y podemos comenzar el próximo lunes.';
+    f.gmail = sentMailbox([
+      sentEmail(
+        0,
+        {},
+        `${original}\n\nSent from my iPhone\n\nEste mensaje contiene información confidencial dirigida exclusivamente a su destinatario. Si lo ha recibido por error, elimínelo.\n\n> Texto ajeno de otro remitente.`,
+      ),
+      sentEmail(
+        1,
+        {},
+        'Este mensaje se ha generado automáticamente. No responda a este correo.',
+      ),
+    ]);
+    await generateWritingProfile(f);
+    const request = f.text.generate.mock.calls[0][0];
+    expect(JSON.parse(request.input)).toEqual({
+      examples: [{ example: 1, text: original }],
+    });
+    expect(f.repository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sampleSize: 1,
+        warnings: ['BELOW_RECOMMENDED_SIZE', 'SAMPLE_CHANGED'],
+      }),
+    );
+    expect(JSON.stringify(f.repository.save.mock.calls)).not.toMatch(
+      /iPhone|confidencial|Texto ajeno|propuesta/,
+    );
   });
   it('no llama al modelo si ya no queda ningún ejemplo válido', async () => {
     const f = await fixture();

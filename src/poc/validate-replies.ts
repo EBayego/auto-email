@@ -130,7 +130,7 @@ export async function validateReplySamples(
     Parameters<typeof generateReplyForThread>[0],
     'selection' | 'gmail' | 'shouldGenerate'
   > & {
-    gmail: Pick<GmailClient, 'getThread' | 'getMessage'>;
+    gmail: Pick<GmailClient, 'getThread' | 'getMessage' | 'listMessages'>;
     selection: Omit<
       Parameters<typeof generateReplyForThread>[0]['selection'],
       'threadId' | 'targetMessageId'
@@ -178,6 +178,7 @@ export async function validateReplySamples(
       const gmail = Object.freeze({
         getThread: async () => thread,
         getMessage: input.gmail.getMessage.bind(input.gmail),
+        listMessages: input.gmail.listMessages.bind(input.gmail),
       });
       result.report = await generateReplyForThread({
         ...input,

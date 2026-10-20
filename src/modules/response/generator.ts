@@ -21,6 +21,11 @@ import {
   responseVerificationInstructions,
 } from './prompts';
 import { detectReplyLanguage } from './language';
+import {
+  effectiveStylePreferences,
+  renderStylePreference,
+  violatesStylePreferences,
+} from '@/modules/identity/style-preferences';
 
 export type {
   ResponseGenerator,
@@ -89,18 +94,24 @@ function prepare(input: ResponseGenerationInput) {
     styleExamples: (input.styleExamples ?? []).map((example) => ({
       text: example.text,
     })),
-    userInstructions: [...(input.userInstructions ?? [])],
+    stylePreferences: effectiveStylePreferences(
+      input.stylePreferences,
+      input.userInstructions,
+    ),
   };
-  if (Buffer.byteLength(JSON.stringify(prepared)) > responseLimits.inputBytes)
+  const result = {
+    ...prepared,
+    userInstructions: prepared.stylePreferences.map(renderStylePreference),
+  };
+  if (Buffer.byteLength(JSON.stringify(result)) > responseLimits.inputBytes)
     throw new ResponseGenerationError('INVALID_INPUT');
-  return prepared;
+  return result;
 }
 
 // Verify literal citations and concrete values without trusting the model's own verdict.
 function groundingIssue(
   candidate: GeneratedResponse,
   conversation: ReturnType<typeof prepare>['conversation'],
-  userInstructions: readonly string[],
 ): ResponseWarning | null {
   const commitment =
     /\b(?:(?:we|i)\s+(?:can|will|shall|offer|provide|agree|accept|guarantee|promise)|podemos|ofrecemos|aceptamos|garantizamos|revisaremos|enviaremos|me comprometo|nos comprometemos|estoy disponible|estamos disponibles|nuestro equipo)\b/iu;
@@ -115,20 +126,18 @@ function groundingIssue(
     if (source.speaker !== 'owner' && commitment.test(evidence.claim))
       return 'UNSUPPORTED_COMMITMENT';
   }
-  if (!userInstructions.length) {
-    for (const clause of candidate
-      .bodyText!.split(/[.!?\n]+/u)
-      .filter((part) => commitment.test(part))) {
-      if (
-        !candidate.evidence.some(
-          (evidence) =>
-            conversation.messages[evidence.messageIndex]?.speaker === 'owner' &&
-            commitment.test(evidence.claim) &&
-            normalize(clause).includes(normalize(evidence.claim)),
-        )
+  for (const clause of candidate
+    .bodyText!.split(/[.!?\n]+/u)
+    .filter((part) => commitment.test(part))) {
+    if (
+      !candidate.evidence.some(
+        (evidence) =>
+          conversation.messages[evidence.messageIndex]?.speaker === 'owner' &&
+          commitment.test(evidence.claim) &&
+          normalize(clause).includes(normalize(evidence.claim)),
       )
-        return 'UNSUPPORTED_COMMITMENT';
-    }
+    )
+      return 'UNSUPPORTED_COMMITMENT';
   }
   const values = (value: string) =>
     (
@@ -149,18 +158,33 @@ function groundingIssue(
 
 export function createResponseGenerator(
   client: TextGenerationClient,
+  options: { unpersonalizedEvaluation?: boolean } = {},
 ): ResponseGenerator {
   return Object.freeze({
     async generate(
       input: ResponseGenerationInput,
     ): Promise<ResponseGenerationResult> {
       const prepared = prepare(input);
+      if (
+        options.unpersonalizedEvaluation &&
+        (prepared.conversation.style ||
+          prepared.styleExamples.length ||
+          prepared.stylePreferences.length)
+      )
+        throw new ResponseGenerationError('INVALID_INPUT');
       const target = prepared.conversation.messages.at(-1)!;
       const targetLanguage = detectReplyLanguage(target.text);
+      const languagePreference = prepared.stylePreferences.find(
+        (p) => p.key === 'language',
+      )?.value;
+      const expectedLanguage =
+        languagePreference && languagePreference !== 'recipient'
+          ? languagePreference
+          : targetLanguage;
       const replyTask = {
         author: 'owner',
         recipient: target.speaker,
-        targetLanguage: targetLanguage ?? 'und',
+        targetLanguage: expectedLanguage ?? 'und',
       };
       let inputTokens = 0,
         outputTokens = 0,
@@ -206,6 +230,7 @@ export function createResponseGenerator(
           jsonSchema: { name, schema },
         });
         if (
+          ![1, 2].includes(generated.attempts ?? 1) ||
           ![generated.inputTokens, generated.outputTokens].every(
             (n) => Number.isSafeInteger(n) && n >= 0 && n <= 2147483647,
           )
@@ -213,36 +238,46 @@ export function createResponseGenerator(
           throw new ResponseGenerationError('INVALID_RESPONSE');
         inputTokens += generated.inputTokens;
         outputTokens += generated.outputTokens;
+        modelCalls += (generated.attempts ?? 1) - 1;
         return generated.text;
       };
       try {
-        if (!prepared.conversation.style)
+        if (!prepared.conversation.style && !options.unpersonalizedEvaluation)
           return result(abstain('STYLE_PROFILE_UNAVAILABLE', 'und'));
         const candidate = parseGeneratedResponse(
           await generate(
-            responseInstructions,
+            options.unpersonalizedEvaluation
+              ? responseInstructions +
+                  '\nEvaluación sin personalización: no tienes perfil ni ejemplos del titular. Usa un tono neutro y el idioma objetivo, manteniendo todas las reglas de seguridad y verificación.'
+              : responseInstructions,
             { ...prepared, replyTask },
             'generated_response_v1',
             generatedResponseSchema,
           ),
         );
         if (candidate.status !== 'READY') return result(candidate);
+        if (
+          violatesStylePreferences(
+            candidate.bodyText!,
+            prepared.stylePreferences,
+          )
+        )
+          return result(
+            abstain('STYLE_PREFERENCE_MISMATCH', candidate.language),
+          );
         const bodyLanguage = detectReplyLanguage(candidate.bodyText!);
         const declaredLanguage = candidate.language.toLowerCase().split('-')[0];
         if (
           (bodyLanguage && bodyLanguage !== declaredLanguage) ||
-          (!prepared.userInstructions.length &&
-            targetLanguage &&
-            targetLanguage !== declaredLanguage)
+          (expectedLanguage && expectedLanguage !== declaredLanguage)
         )
           return result(
-            abstain('LANGUAGE_MISMATCH', targetLanguage ?? candidate.language),
+            abstain(
+              'LANGUAGE_MISMATCH',
+              expectedLanguage ?? candidate.language,
+            ),
           );
-        const issue = groundingIssue(
-          candidate,
-          prepared.conversation,
-          prepared.userInstructions,
-        );
+        const issue = groundingIssue(candidate, prepared.conversation);
         if (issue) return result(abstain(issue, candidate.language));
         const verification = parseResponseVerification(
           await generate(
@@ -251,6 +286,7 @@ export function createResponseGenerator(
               replyTask,
               conversation: { messages: prepared.conversation.messages },
               userInstructions: prepared.userInstructions,
+              stylePreferences: prepared.stylePreferences,
               proposal: {
                 bodyText: candidate.bodyText,
                 language: candidate.language,
@@ -278,6 +314,7 @@ export function createResponseGenerator(
         prepared.conversation.messages.length = 0;
         prepared.styleExamples.length = 0;
         prepared.userInstructions.length = 0;
+        prepared.stylePreferences.length = 0;
       }
     },
   });

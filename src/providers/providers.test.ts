@@ -34,6 +34,103 @@ const completed = {
 };
 
 describe('clientes de proveedores', () => {
+  it('rechaza JSON concatenado como salida ambigua y solicita un solo objeto sin elegir uno arbitrariamente', async () => {
+    const ambiguous = structuredClone(completed);
+    ambiguous.output[0].content[0].text = '{"ok":false}{"ok":true}';
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(ambiguous))
+      .mockResolvedValueOnce(Response.json(completed));
+    const result = await createOpenAiClient(aiConfig, 30000, fetcher).generate({
+      instructions: 'Rules',
+      input: 'Synthetic',
+      jsonSchema: { name: 'result', schema: { type: 'object' } },
+    });
+    expect(result).toMatchObject({ text: '{"ok":true}', attempts: 2 });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(
+      JSON.parse(String(fetcher.mock.calls[1][1]?.body)).instructions,
+    ).toContain('sin una segunda versión ni objetos concatenados');
+    const alwaysAmbiguous = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => Response.json(ambiguous));
+    await expect(
+      createOpenAiClient(aiConfig, 30000, alwaysAmbiguous).generate({
+        instructions: 'Rules',
+        input: 'Synthetic',
+        jsonSchema: { name: 'result', schema: { type: 'object' } },
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    expect(alwaysAmbiguous).toHaveBeenCalledTimes(2);
+  });
+  it('reintenta una sola vez salidas truncadas, mantiene modelo y presupuesto y suma el consumo real', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({
+          ...completed,
+          status: 'incomplete',
+          incomplete_details: { reason: 'max_output_tokens' },
+          usage: { input_tokens: 10, output_tokens: 2048 },
+        }),
+      )
+      .mockResolvedValueOnce(Response.json(completed));
+    const result = await createOpenAiClient(aiConfig, 30000, fetcher).generate({
+      instructions: 'Reglas de seguridad',
+      input: 'Synthetic',
+    });
+    expect(result).toMatchObject({
+      attempts: 2,
+      inputTokens: 15,
+      outputTokens: 2051,
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const bodies = fetcher.mock.calls.map(([, init]) =>
+      JSON.parse(String(init?.body)),
+    );
+    expect(
+      bodies.every(
+        (body) =>
+          body.model === aiConfig.model &&
+          body.max_output_tokens === 2048 &&
+          body.store === false &&
+          !body.tools,
+      ),
+    ).toBe(true);
+    expect(bodies[1].instructions).toContain('Reglas de seguridad');
+    expect(bodies[1].instructions).toContain('JSON compacto');
+    expect(bodies[1].input).toBe('Synthetic');
+  });
+  it('no repite rechazos de contenido ni convierte una segunda salida truncada en válida', async () => {
+    const refused = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        ...completed,
+        status: 'incomplete',
+        incomplete_details: { reason: 'content_filter' },
+      }),
+    );
+    await expect(
+      createOpenAiClient(aiConfig, 30000, refused).generate({
+        instructions: 'Rules',
+        input: 'Synthetic',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    expect(refused).toHaveBeenCalledOnce();
+    const truncated = vi.fn<typeof fetch>().mockImplementation(async () =>
+      Response.json({
+        ...completed,
+        status: 'incomplete',
+        incomplete_details: { reason: 'max_output_tokens' },
+      }),
+    );
+    await expect(
+      createOpenAiClient(aiConfig, 30000, truncated).generate({
+        instructions: 'Rules',
+        input: 'Synthetic',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    expect(truncated).toHaveBeenCalledTimes(2);
+  });
   it('ignora endpoints y proyectos OpenAI ambientales ajenos a la configuración', async () => {
     vi.stubEnv('OPENAI_BASE_URL', 'https://attacker.example/v1');
     vi.stubEnv('OPENAI_PROJECT_ID', 'another-project');

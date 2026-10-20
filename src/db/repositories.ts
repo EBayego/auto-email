@@ -191,13 +191,20 @@ export function createOwnerRepositories(client: DataClient, ownerId: string) {
       requireUuid(runId);
       requireUuid(accountId);
       validateOutcome(outcome);
+      const current = requireResource(
+        await processingRuns.findById(runId, accountId),
+      );
+      const started = Date.parse(current.started_at);
+      if (!Number.isFinite(started)) throw new DataAccessError('UNAVAILABLE');
       const row = owned(
         await checked<ProcessingRun>(
           client
             .from('processing_runs')
             .update({
               status: outcome.status,
-              finished_at: new Date().toISOString(),
+              finished_at: new Date(
+                Math.max(Date.now(), started + 1),
+              ).toISOString(),
               messages_detected: outcome.messagesDetected,
               messages_processed: outcome.messagesProcessed,
               drafts_created: outcome.draftsCreated,

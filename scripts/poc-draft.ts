@@ -6,6 +6,7 @@ import { ConfigurationError, getServerConfig } from '../src/config/env';
 import { createServiceDataClient } from '../src/db/service-client';
 import { resolvePocAccount } from '../src/db/poc-account';
 import { createWritingProfileRepository } from '../src/db/writing-profiles';
+import { selectContextualWritingProfile } from '../src/db/contextual-styles';
 import { createDraftGenerationRepository } from '../src/db/draft-generations';
 import { DataAccessError } from '../src/db/errors';
 import { createSentSampleStore } from '../src/poc/sent-sample-store';
@@ -19,12 +20,15 @@ import { WritingProfileError } from '../src/modules/identity/writing-profile';
 import { SentSampleError } from '../src/modules/identity/sent-sample';
 import { ResponseGenerationError } from '../src/modules/response/contracts';
 import { ProviderError } from '../src/providers/errors';
+import { StyleExampleRetrievalError } from '../src/modules/identity/style-example-retriever';
+import { createStylePreferenceRepository } from '../src/db/style-preferences';
+import { StylePreferenceError } from '../src/modules/identity/style-preferences';
 
 export const usage = `MAIL-021 — Genera y crea un borrador de respuesta en Gmail.
 Uso: npm run poc:draft -- --email cuenta@gmail.com --thread-id THREAD_ID [opciones]
   --message-id MESSAGE_ID  Objetivo concreto; por defecto, el último entrante de INBOX.
   --alias EMAIL           Alias propio confirmado por el operador; repetible.
-  --style-examples N      Ejemplos en memoria (0–3; por defecto 3).
+  --style-examples N      Ejemplos relevantes de enviados, bajo demanda (0–3; por defecto 3).
   --help                  Muestra esta ayuda.
 Requiere el perfil confirmado de MAIL-018 y una respuesta READY de MAIL-020.
 Revalida el hilo antes de crear. Si hay respuesta posterior, borrador previo o
@@ -115,6 +119,33 @@ export async function main(args = process.argv.slice(2)) {
       accountId: work.gmailAccountId,
       mailboxAddress: account.email,
       style: { revision: profile.revision, profile: profile.profile },
+      resolvePreferences: (recipient) =>
+        createStylePreferenceRepository(
+          client,
+          work.userId,
+          work.gmailAccountId,
+        ).resolve(recipient),
+      resolveStyle: async (recipient) => {
+        const chosen = await selectContextualWritingProfile(
+          client,
+          work.userId,
+          work.gmailAccountId,
+          recipient,
+        );
+        if (!chosen)
+          throw new ResponseGenerationError('STYLE_PROFILE_REQUIRED');
+        return chosen
+          ? {
+              revision: chosen.revision,
+              profile: chosen.profile,
+              ...(chosen.scope_kind !== 'GENERAL'
+                ? { exampleMessageIds: chosen.source_message_ids }
+                : {}),
+              scopeKind: chosen.scope_kind as
+                'GENERAL' | 'RECIPIENT' | 'DOMAIN' | 'RELATIONSHIP',
+            }
+          : null;
+      },
     },
     sample,
     styleExamplesLimit: options.examples,
@@ -142,6 +173,8 @@ if (
             error instanceof DraftWriteError ||
             error instanceof WritingProfileError ||
             error instanceof SentSampleError ||
+            error instanceof StyleExampleRetrievalError ||
+            error instanceof StylePreferenceError ||
             error instanceof ResponseGenerationError ||
             error instanceof ProviderError
           ? error.code

@@ -94,6 +94,45 @@ describe('MAIL-008 con Supabase real y dos usuarios', () => {
       expect((await service.auth.admin.deleteUser(id)).error).toBeNull();
   });
 
+  it('finaliza una ejecución aunque el reloj de la base esté adelantado y tenga microsegundos', async () => {
+    const worker = await openWorkerDataAccess(service, {
+      userId: owners[0].id,
+      gmailAccountId: owners[0].accountId,
+    });
+    const run = await worker.processingRuns.start('MANUAL');
+    try {
+      const future = new Date(Date.now() + 5000)
+        .toISOString()
+        .replace('Z', '123Z');
+      expect(
+        (
+          await service
+            .from('processing_runs')
+            .update({ started_at: future })
+            .eq('id', run.id)
+            .eq('user_id', owners[0].id)
+        ).error,
+      ).toBeNull();
+      const finished = await worker.processingRuns.finish(run.id, {
+        status: 'COMPLETED',
+        messagesDetected: 0,
+        messagesProcessed: 0,
+        draftsCreated: 0,
+        errorCount: 0,
+      });
+      expect(Date.parse(finished.finished_at!)).toBe(Date.parse(future) + 1);
+    } finally {
+      expect(
+        (
+          await service
+            .from('processing_runs')
+            .delete()
+            .eq('id', run.id)
+            .eq('user_id', owners[0].id)
+        ).error,
+      ).toBeNull();
+    }
+  });
   it.each([0, 1])(
     'el usuario %i solo recibe su cuenta, ajustes y ejecuciones',
     async (index) => {
