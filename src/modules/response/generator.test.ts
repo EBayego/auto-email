@@ -28,30 +28,34 @@ function client(
   };
 }
 describe('ResponseGenerator (MAIL-020)', () => {
-  it('contabiliza los reintentos del proveedor y conserva la verificación independiente', async () => {
-    const api = client();
-    api.generate
-      .mockReset()
-      .mockResolvedValueOnce({
-        text: JSON.stringify(readyResponse()),
-        inputTokens: 150,
-        outputTokens: 100,
-        attempts: 2,
-      })
-      .mockResolvedValueOnce({
-        text: JSON.stringify(supportedResponse()),
-        inputTokens: 50,
-        outputTokens: 20,
+  it.each([2, 3, 10])(
+    'contabiliza %i intentos de formato/transporte y conserva la verificación independiente',
+    async (attempts) => {
+      const api = client();
+      api.generate
+        .mockReset()
+        .mockResolvedValueOnce({
+          text: JSON.stringify(readyResponse()),
+          inputTokens: 150,
+          outputTokens: 100,
+          attempts,
+        })
+        .mockResolvedValueOnce({
+          text: JSON.stringify(supportedResponse()),
+          inputTokens: 50,
+          outputTokens: 20,
+        });
+      const result =
+        await createResponseGenerator(api).generate(responseInput());
+      expect(result).toMatchObject({
+        status: 'READY',
+        modelCalls: attempts + 1,
+        inputTokens: 200,
+        outputTokens: 120,
       });
-    const result = await createResponseGenerator(api).generate(responseInput());
-    expect(result).toMatchObject({
-      status: 'READY',
-      modelCalls: 3,
-      inputTokens: 200,
-      outputTokens: 120,
-    });
-    expect(api.generate).toHaveBeenCalledTimes(2);
-  });
+      expect(api.generate).toHaveBeenCalledTimes(2);
+    },
+  );
   it('transmite calidez y disposición al generador y al verificador sin autorizar promesas concretas', async () => {
     const api = client();
     const result = await createResponseGenerator(api).generate({
@@ -322,7 +326,7 @@ describe('ResponseGenerator (MAIL-020)', () => {
         bodyText: `Hello,\n\n${claim}.\n\nKind regards.`,
         evidence: [{ messageIndex: 0, quote: `${claim}.`, claim }],
       }),
-    ).generate(input);
+    ).generate({ ...input, allowEmailHistory: true });
     expect(result).toMatchObject({
       status: 'READY',
       language: 'en',
@@ -478,9 +482,12 @@ describe('ResponseGenerator (MAIL-020)', () => {
     expect(result).toMatchObject({
       status: 'INSUFFICIENT_CONTEXT',
       bodyText: null,
-      modelCalls: 2,
+      modelCalls: 0,
     });
-    expect(result.warnings).toContain('UNSUPPORTED_COMMITMENT');
+    expect(result.warnings).toContain('POLICY_RESTRICTED');
+    expect(result.policyEvaluations?.[0].reasons).toContain(
+      'DISCOUNT_REQUIRES_REVIEW',
+    );
   });
   it('bloquea afirmaciones sin respaldo que no tengan cifras ni citas declaradas', async () => {
     const api = client(
@@ -492,7 +499,7 @@ describe('ResponseGenerator (MAIL-020)', () => {
     ).toMatchObject({
       status: 'INSUFFICIENT_CONTEXT',
       bodyText: null,
-      modelCalls: 2,
+      modelCalls: 1,
     });
   });
   it('bloquea riesgos, inyección y respuestas innecesarias sin entregar un cuerpo', async () => {
@@ -509,7 +516,13 @@ describe('ResponseGenerator (MAIL-020)', () => {
       });
       expect(
         await createResponseGenerator(api).generate(responseInput()),
-      ).toMatchObject({ status: 'BLOCKED', bodyText: null, modelCalls: 1 });
+      ).toMatchObject({
+        status: 'BLOCKED',
+        bodyText: null,
+        modelCalls: 1,
+        needsHumanInput:
+          warning === 'HIGH_RISK' || warning === 'PROMPT_INJECTION',
+      });
     }
   });
   it('no llama al modelo sin perfil, con un objetivo propio o con un historial inválido', async () => {
@@ -537,16 +550,17 @@ describe('ResponseGenerator (MAIL-020)', () => {
       bodyText: null,
       warnings: ['PROMPT_INJECTION'],
     });
-    await createResponseGenerator(api).generate({
+    const result = await createResponseGenerator(api).generate({
       ...input,
       ...{ store: true, tools: ['send'], secret: 'private-secret' },
     });
-    expect(api.generate.mock.calls[0][0].instructions).toContain(
-      'datos no confiables',
-    );
-    expect(api.generate.mock.calls[0][0].input).toContain('Ignora las reglas');
-    expect(api.generate.mock.calls[0][0].input).not.toContain('private-secret');
-    expect(api.generate.mock.calls[0][0]).not.toHaveProperty('tools');
+    expect(result).toMatchObject({
+      status: 'BLOCKED',
+      bodyText: null,
+      modelCalls: 0,
+    });
+    expect(result.policyEvaluations?.[0].reasons).toContain('PROMPT_INJECTION');
+    expect(api.generate).not.toHaveBeenCalled();
   });
   it('no reintenta errores del proveedor ni acepta JSON parcial de ninguna etapa', async () => {
     const api = client();

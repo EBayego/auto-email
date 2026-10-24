@@ -6,6 +6,9 @@ import {
   type DraftWriteResult,
 } from '@/modules/gmail/draft-contracts';
 import { generateReplyForThread } from './generate-reply';
+import { randomUUID } from 'node:crypto';
+import { responsePolicyVersion } from '@/modules/policy/settings';
+import { DraftPreconditionError } from '@/modules/gmail/draft-contracts';
 
 export async function createReplyDraftForThread(
   input: Omit<
@@ -31,7 +34,33 @@ export async function createReplyDraftForThread(
     },
     consume: async (response, context) => {
       if (response.status !== 'READY') return;
-      draft = await createDraftWriter(input).create({
+      draft = await createDraftWriter({
+        ...input,
+        recordFactualValidation: async (validation) => {
+          await input.factualValidation?.record(
+            context,
+            validation,
+            randomUUID(),
+          );
+        },
+        async assertCanWrite() {
+          const latest = await input.policy?.load(context);
+          if (latest && latest.revision !== response.policyRevision) {
+            await input.policy!.record(
+              context,
+              {
+                version: responsePolicyVersion,
+                phase: 'POSTFLIGHT',
+                action: 'REVIEW_REQUIRED',
+                reasons: ['POLICY_CHANGED'],
+              },
+              randomUUID(),
+              latest.revision,
+            );
+            throw new DraftPreconditionError('PREWRITE_FAILED');
+          }
+        },
+      }).create({
         selection: input.selection,
         context,
         response,

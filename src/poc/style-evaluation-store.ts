@@ -9,6 +9,7 @@ import {
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { responseLimits } from '@/modules/response/contracts';
 import {
   evaluationFingerprint,
   evaluationModes,
@@ -96,7 +97,7 @@ const reportSchema = z.strictObject({
               profileFingerprint: fingerprint.nullable(),
               status: z.string().regex(/^[A-Z_]{1,40}$/),
               examplesUsed: z.int().min(0).max(3),
-              modelCalls: z.int().min(0).max(4),
+              modelCalls: z.int().min(0).max(responseLimits.modelCalls),
               inputTokens: count,
               outputTokens: count,
               proxies: proxies.nullable(),

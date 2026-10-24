@@ -34,6 +34,35 @@ const completed = {
 };
 
 describe('clientes de proveedores', () => {
+  it.each([
+    'function_call',
+    'web_search_call',
+    'mcp_call',
+    'computer_call',
+    'shell_call',
+    'unknown_action',
+  ])(
+    'rechaza una salida de acción %s aunque contenga JSON válido, sin reintentar',
+    async (type) => {
+      const fetcher = vi.fn<typeof fetch>().mockImplementation(async () =>
+        Response.json({
+          ...completed,
+          output: [
+            ...completed.output,
+            { type, name: 'gmail.send', arguments: '{}' },
+          ],
+        }),
+      );
+      await expect(
+        createOpenAiClient(aiConfig, 30000, fetcher).generate({
+          instructions: 'Rules',
+          input: 'Untrusted data',
+          jsonSchema: { name: 'result', schema: { type: 'object' } },
+        }),
+      ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+      expect(fetcher).toHaveBeenCalledOnce();
+    },
+  );
   it('rechaza JSON concatenado como salida ambigua y solicita un solo objeto sin elegir uno arbitrariamente', async () => {
     const ambiguous = structuredClone(completed);
     ambiguous.output[0].content[0].text = '{"ok":false}{"ok":true}';
@@ -99,7 +128,10 @@ describe('clientes de proveedores', () => {
     ).toBe(true);
     expect(bodies[1].instructions).toContain('Reglas de seguridad');
     expect(bodies[1].instructions).toContain('JSON compacto');
-    expect(bodies[1].input).toBe('Synthetic');
+    expect(bodies[1].input).toEqual([
+      { role: 'user', content: [{ type: 'input_text', text: 'Synthetic' }] },
+    ]);
+    expect(bodies.every((body) => body.tool_choice === 'none')).toBe(true);
   });
   it('no repite rechazos de contenido ni convierte una segunda salida truncada en válida', async () => {
     const refused = vi.fn<typeof fetch>().mockResolvedValue(
@@ -164,6 +196,9 @@ describe('clientes de proveedores', () => {
         store: true,
         model: 'attacker-model',
         tools: [{ type: 'web_search' }],
+        tool_choice: 'required',
+        previous_response_id: 'foreign-response',
+        conversation: 'foreign-history',
       },
     });
     const body = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
@@ -171,6 +206,9 @@ describe('clientes de proveedores', () => {
     expect(body.store).toBe(false);
     expect(body.text.format.strict).toBe(true);
     expect(body.tools).toBeUndefined();
+    expect(body.tool_choice).toBe('none');
+    expect(body.previous_response_id).toBeUndefined();
+    expect(body.conversation).toBeUndefined();
     expect(result).toEqual({
       text: '{"ok":true}',
       inputTokens: 5,

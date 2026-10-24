@@ -1,0 +1,52 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path=public,extensions;
+select no_plan();
+create function pg_temp.doc_index(s text) returns jsonb language sql as $$
+  select jsonb_build_object('indexer_version','mail037-v1','normalized_text',s,'chunks',jsonb_build_array(jsonb_build_object(
+    'position',0,'section','Tarifas','content',s,'start_offset',0,'end_offset',char_length(s),'page_start',1,'page_end',1)));
+$$;
+insert into auth.users(id,aud,role,email) values
+ ('00000000-0000-4000-8000-000000000037','authenticated','authenticated','mail037@example.invalid'),
+ ('00000000-0000-4000-8000-000000000137','authenticated','authenticated','mail037-other@example.invalid');
+create temporary table doc37 as select * from public.reserve_source_document('00000000-0000-4000-8000-000000000037','tarifas.txt','text/plain',50,repeat('a',64));
+select ok(public.complete_indexed_source_document(user_id,id,'Consulta vigente: 125 euros.',pg_temp.doc_index('Consulta vigente: 125 euros.')),'Carga e índice atómicos') from doc37;
+select is((select count(*) from public.knowledge_chunks),1::bigint,'Persiste fragmento');
+select is((select count(*) from public.search_knowledge_chunks('00000000-0000-4000-8000-000000000037','consulta')),1::bigint,'Búsqueda textual');
+select is((select count(*) from public.search_knowledge_chunks('00000000-0000-4000-8000-000000000137','consulta')),0::bigint,'Búsqueda exige propietario');
+select is((select count(*) from public.search_knowledge_chunks('00000000-0000-4000-8000-000000000037','-consulta')),0::bigint,'No recorre todo el índice para una negación aislada');
+select ok(exists(select 1 from pg_indexes where indexname='knowledge_chunks_search_idx' and indexdef like '%USING gin%'),'Índice GIN');
+select ok(not has_function_privilege('authenticated','public.replace_knowledge_index(uuid,uuid,integer,text,text,jsonb)','EXECUTE'),'Indexación solo backend');
+select ok(not has_function_privilege('authenticated','public.search_knowledge_chunks(uuid,text,integer,uuid)','EXECUTE'),'No puede falsear dueño en RPC');
+select ok(not has_table_privilege('authenticated','public.knowledge_chunks','INSERT'),'No inyecta fragmentos');
+select throws_ok($q$select * from public.search_knowledge_chunks('00000000-0000-4000-8000-000000000037','consulta',21)$q$,'P0001','INVALID_KNOWLEDGE_QUERY','Acota resultados');
+create temporary table chunk37 as select id from public.knowledge_chunks;
+select ok(public.replace_knowledge_index(user_id,id,1,repeat('a',64),md5('Consulta vigente: 125 euros.'),pg_temp.doc_index('Consulta vigente: 125 euros.')),'Reindexación idempotente') from doc37;
+select is((select id from public.knowledge_chunks),(select id from chunk37),'Mantiene IDs si no cambia el índice');
+select throws_like($q$select public.replace_knowledge_index('00000000-0000-4000-8000-000000000037',(select id from doc37),1,repeat('a',64),md5('Consulta vigente: 125 euros.'),jsonb_set(pg_temp.doc_index('Consulta vigente: 125 euros.'),'{chunks,0,page_end}','0'))$q$,'%violates check constraint%','Un fragmento inválido revierte toda la sustitución');
+select is((select id from public.knowledge_chunks),(select id from chunk37),'Fallo conserva índice anterior completo');
+select ok(not public.replace_knowledge_index(user_id,id,1,repeat('a',64),'obsoleto',pg_temp.doc_index('Consulta vigente: 125 euros.')),'Rechaza texto de otra revisión') from doc37;
+select ok(not public.replace_knowledge_index(user_id,id,null,repeat('a',64),md5('Consulta vigente: 125 euros.'),pg_temp.doc_index('Consulta vigente: 125 euros.')),'Versión esperada obligatoria') from doc37;
+select ok(not public.replace_knowledge_index(user_id,id,1,null,md5('Consulta vigente: 125 euros.'),pg_temp.doc_index('Consulta vigente: 125 euros.')),'Hash esperado obligatorio') from doc37;
+grant select on doc37 to authenticated;
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000137","role":"authenticated"}',true);
+select is((select count(*) from public.knowledge_chunks),0::bigint,'RLS oculta fragmentos ajenos');
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000037","role":"authenticated"}',true);
+select is((select count(*) from public.knowledge_chunks),1::bigint,'RLS permite propios');
+reset role;
+update public.source_documents set version=2 where id=(select id from doc37);
+select is((select count(*) from public.knowledge_chunks),0::bigint,'Cambiar versión elimina fragmentos anteriores');
+select is((select normalized_text from public.source_document_texts where document_id=(select id from doc37)),null::text,'Invalida texto normalizado anterior');
+select ok(not public.replace_knowledge_index(user_id,id,1,repeat('a',64),md5('Consulta vigente: 125 euros.'),pg_temp.doc_index('Consulta vigente: 125 euros.')),'Indexador antiguo no publica una versión obsoleta') from doc37;
+update public.source_document_texts set text_content='Nuevo procedimiento comercial.' where document_id=(select id from doc37);
+select ok(public.replace_knowledge_index(user_id,id,2,repeat('a',64),md5('Nuevo procedimiento comercial.'),pg_temp.doc_index('Nuevo procedimiento comercial.')),'Indexa nueva versión') from doc37;
+select is((select count(*) from public.search_knowledge_chunks('00000000-0000-4000-8000-000000000037','125')),0::bigint,'Nunca recupera precio obsoleto');
+select is((select version from public.search_knowledge_chunks('00000000-0000-4000-8000-000000000037','procedimiento')),2,'Procedencia con versión actual');
+update public.source_document_texts set text_content='Cambio de contenido sin cambiar versión.' where document_id=(select id from doc37);
+select is((select count(*) from public.knowledge_chunks),0::bigint,'Actualizar texto también invalida índice');
+select ok(public.replace_knowledge_index(user_id,id,2,repeat('a',64),md5('Cambio de contenido sin cambiar versión.'),pg_temp.doc_index('Cambio de contenido sin cambiar versión.')),'Reconstruye índice') from doc37;
+select ok(public.begin_source_document_deletion(user_id,id),'Retira documento') from doc37;
+select is((select count(*) from public.knowledge_chunks),0::bigint,'Retirada borra fragmentos antes de Storage');
+select * from finish();
+rollback;

@@ -16,6 +16,7 @@ import {
 
 export function memoryDraftStore() {
   const rows: DraftRecord[] = [];
+  const writing = new Set<string>();
   const store = {
     find: vi.fn<DraftStore['find']>(
       async (target) =>
@@ -41,6 +42,20 @@ export function memoryDraftStore() {
       rows.push(record);
       return { acquired: true, record: { ...record } };
     }),
+    beginWrite: vi.fn<DraftStore['beginWrite']>(
+      async (id, threadId, targetMessageId) => {
+        const row = rows.find(
+          (row) =>
+            row.id === id &&
+            row.threadId === threadId &&
+            row.targetMessageId === targetMessageId &&
+            row.status === 'CREATING',
+        );
+        if (!row || writing.has(id)) return false;
+        writing.add(id);
+        return true;
+      },
+    ),
     created: vi.fn<DraftStore['created']>(async (id, draftId, messageId) => {
       Object.assign(
         rows.find((row) => row.id === id)!,
@@ -62,7 +77,9 @@ export function memoryDraftStore() {
   return { store, rows };
 }
 export function draftFixture() {
-  const thread: GmailThread = createEmailFixtures().pending;
+  const thread: GmailThread = createEmailFixtures(
+    'Hola, por favor confirma que has recibido este correo. Gracias.',
+  ).pending;
   let saved: GmailMessage | null = null;
   const gmail = {
     listMessages: vi
@@ -73,7 +90,9 @@ export function draftFixture() {
       if (!saved) throw new Error('No draft created');
       return saved;
     }),
-    createDraft: vi.fn<GmailClient['createDraft']>(async (message) => {
+    createDraft: vi.fn<GmailClient['createDraft']>(async (message, guard) => {
+      await guard?.prepare();
+      await guard?.beforeRequest();
       saved = {
         id: 'draft-message-21',
         threadId: message.threadId!,

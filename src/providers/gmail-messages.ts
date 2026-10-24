@@ -52,16 +52,18 @@ export function normalizeGmailQuery(
 ): GmailQuery {
   if (
     typeof resource !== 'string' ||
-    !/^(?:profile|messages|(?:messages|threads)\/[A-Za-z0-9_-]{1,512})$/.test(
+    !/^(?:profile|messages|drafts|(?:messages|threads|drafts)\/[A-Za-z0-9_-]{1,512})$/.test(
       resource,
     )
   )
     reject();
-  const listing = resource === 'messages';
+  const listing = resource === 'messages' || resource === 'drafts';
   keys(
     query,
     listing
-      ? ['q', 'pageToken', 'maxResults', 'labelIds', 'includeSpamTrash']
+      ? resource === 'drafts'
+        ? ['pageToken', 'maxResults']
+        : ['q', 'pageToken', 'maxResults', 'labelIds', 'includeSpamTrash']
       : resource === 'profile'
         ? []
         : ['format', 'metadataHeaders'],
@@ -83,7 +85,9 @@ export function normalizeGmailQuery(
     return {
       ...query,
       maxResults,
-      includeSpamTrash: query.includeSpamTrash ?? false,
+      ...(resource === 'messages'
+        ? { includeSpamTrash: query.includeSpamTrash ?? false }
+        : {}),
     };
   }
   if (resource === 'profile') return {};
@@ -117,7 +121,7 @@ function listQuery(options: GmailListOptions): GmailQuery {
     'pageToken',
   ]);
   const mailbox = options.mailbox === undefined ? 'inbox' : options.mailbox;
-  if (!['inbox', 'sent', 'all'].includes(mailbox)) reject();
+  if (!['inbox', 'sent', 'all', 'incoming'].includes(mailbox)) reject();
   if (options.labelIds !== undefined && !strings(options.labelIds, safeId))
     reject();
   const labels = [
@@ -127,6 +131,7 @@ function listQuery(options: GmailListOptions): GmailQuery {
     ]),
   ];
   const search: string[] = [];
+  if (mailbox === 'incoming') search.push('-in:sent', '-in:drafts');
   for (const name of ['after', 'before'] as const) {
     const date = options[name];
     if (date === undefined) continue;

@@ -217,8 +217,8 @@ export function createGmailConnection(input: {
   };
   const client = withMessageQueries({
     get: (resource, query) => call((gmail) => gmail.get(resource, query), true),
-    createDraft: (message) =>
-      call((gmail) => gmail.createDraft(message), false),
+    createDraft: (message, guard) =>
+      call((gmail) => gmail.createDraft(message, guard), false),
   });
   return Object.freeze({
     client,

@@ -20,6 +20,32 @@ function fixture(body: unknown = {}) {
 }
 
 describe('consultas de mensajes Gmail (MAIL-014)', () => {
+  it('MAIL-048 lista borradores con paginación acotada para reconciliación, solo mediante GET', async () => {
+    const f = fixture({ drafts: [], nextPageToken: 'page2' });
+    expect(
+      await f.client.get('drafts', { maxResults: 100, pageToken: 'page1' }),
+    ).toEqual({ drafts: [], nextPageToken: 'page2' });
+    expect(f.url().pathname).toBe('/gmail/v1/users/me/drafts');
+    expect(Object.fromEntries(f.url().searchParams)).toEqual({
+      maxResults: '100',
+      pageToken: 'page1',
+    });
+    expect(f.fetcher.mock.calls[0][1]?.method).toBe('GET');
+    await expect(
+      f.client.get('drafts', { maxResults: 101 }),
+    ).rejects.toMatchObject({ code: 'REQUEST_REJECTED' });
+    await expect(
+      f.client.get('drafts', { q: 'arbitrary' }),
+    ).rejects.toMatchObject({ code: 'REQUEST_REJECTED' });
+    expect(f.fetcher).toHaveBeenCalledOnce();
+  });
+  it('consulta entrantes incluso archivados, sin enviados, borradores, spam o papelera', async () => {
+    const f = fixture();
+    await f.client.listMessages({ mailbox: 'incoming' });
+    expect(f.url().searchParams.get('q')).toBe('-in:sent -in:drafts');
+    expect(f.url().searchParams.has('labelIds')).toBe(false);
+    expect(f.url().searchParams.get('includeSpamTrash')).toBe('false');
+  });
   it('limita el listado predeterminado a 25 referencias de recibidos, sin obtener cuerpos ni recorrer páginas', async () => {
     const f = fixture({
       messages: [{ ...ref, payload: 'ignored' }],
@@ -305,8 +331,8 @@ describe('errores de consulta Gmail', () => {
     [403, 'domainPolicy', 'PERMISSION_DENIED', false],
     [403, 'rateLimitExceeded', 'RATE_LIMITED', true],
     [403, 'userRateLimitExceeded', 'RATE_LIMITED', true],
-    [403, 'dailyLimitExceeded', 'RATE_LIMITED', true],
-    [403, 'quotaExceeded', 'RATE_LIMITED', true],
+    [403, 'quotaExceeded', 'QUOTA_EXCEEDED', false],
+    [403, 'dailyLimitExceeded', 'QUOTA_EXCEEDED', false],
     [404, undefined, 'NOT_FOUND', false],
     [429, undefined, 'RATE_LIMITED', true],
     [400, undefined, 'REQUEST_REJECTED', false],

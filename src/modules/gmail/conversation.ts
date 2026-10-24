@@ -5,6 +5,7 @@ import type {
 } from '@/providers/contracts';
 import type { EmailAddress, NormalizedEmail } from './email';
 import { parseGmailMessage } from './parser';
+import { selectReplyRecipients } from './reply-recipients';
 
 export type ConversationIssue =
   | 'UNKNOWN_AUTHOR'
@@ -336,21 +337,7 @@ export async function reconstructConversation(
   if (target && !target.authoredText.trim()) issues.add('EMPTY_TARGET');
   if (target?.possiblyAnsweredByMessageIds.length) issues.add('POSSIBLE_REPLY');
   if (target) {
-    const recipients = [...target.to, ...target.cc, ...target.bcc];
-    const externalRecipients = recipients.filter(
-      (entry) => !ownAddresses.has(addressKey(entry.address)),
-    );
-    if (
-      !recipients.some((entry) =>
-        ownAddresses.has(addressKey(entry.address)),
-      ) ||
-      externalRecipients.length ||
-      target.replyTo.length > 1 ||
-      (target.replyTo.length === 1 &&
-        target.from.length === 1 &&
-        addressKey(target.replyTo[0].address) !==
-          addressKey(target.from[0].address))
-    )
+    if (!selectReplyRecipients(target, input))
       issues.add('AMBIGUOUS_RECIPIENTS');
   }
   const answeredByMessageIds = target?.answeredByMessageIds ?? [];

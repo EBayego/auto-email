@@ -11,6 +11,10 @@ import {
   type ThreadContext,
 } from './conversation';
 import { readEmailHeaders } from './email-headers';
+import {
+  selectReplyRecipients,
+  type ReplyRecipients,
+} from './reply-recipients';
 import type { StyleScope } from '@/modules/identity/contextual-style';
 import {
   validateResolvedStylePreferences,
@@ -78,8 +82,8 @@ export type PreparedReplyContext = {
   styleExampleMessageIds?: readonly string[];
   styleExampleBefore?: string;
   stylePreferences?: ResolvedStylePreferences;
-  replyTarget: {
-    to: { name: string; address: string };
+  messageAudiences?: string[][];
+  replyTarget: ReplyRecipients & {
     subject: string | null;
     inReplyTo: string;
     references: string[];
@@ -245,6 +249,7 @@ export async function selectPendingEmail(
   if (style)
     validateManualSelection({ ...input, style, resolveStyle: undefined });
   report.styleRevision = style?.revision ?? null;
+  report.warnings = style ? [] : ['STYLE_PROFILE_UNAVAILABLE'];
   if (style?.scopeKind) report.styleScope = style.scopeKind;
   const speakers = new Map<string, string>();
   const messages = relevant.map((message) => {
@@ -280,6 +285,13 @@ export async function selectPendingEmail(
       threadId: input.threadId,
       historyId: conversation.historyId,
       targetMessageId: target.id,
+      messageAudiences: relevant.map((message) => [
+        ...new Set(
+          [...message.from, ...message.to, ...message.cc].map((a) =>
+            a.address.toLowerCase(),
+          ),
+        ),
+      ]),
       styleExampleBefore: target.chronologicalAt!,
       ...(input.resolvePreferences
         ? {
@@ -293,7 +305,7 @@ export async function selectPendingEmail(
         ? { styleExampleMessageIds: [...style.exampleMessageIds] }
         : {}),
       replyTarget: {
-        to: { ...target.from[0] },
+        ...selectReplyRecipients(target, input)!,
         subject: target.subject,
         inReplyTo: target.internetMessageId!,
         references: [

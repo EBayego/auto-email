@@ -102,6 +102,7 @@ try {
       'run',
       '--config',
       'vitest.integration.config.mts',
+      ...process.argv.slice(2),
     ],
     {
       cwd: root,

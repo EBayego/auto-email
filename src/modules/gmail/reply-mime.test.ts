@@ -4,7 +4,7 @@ import { buildReplyMime } from './reply-mime';
 const fixture = () => ({
   from: 'owner@example.invalid',
   target: {
-    to: { name: 'Nombre ignorado', address: 'contact@example.invalid' },
+    to: { name: 'Ana Pérez', address: 'contact@example.invalid' },
     subject: 'Re: Confirmación de recepción 📩 '.repeat(6),
     inReplyTo: '<target@example.invalid>',
     references: ['<previous@example.invalid>', '<target@example.invalid>'],
@@ -22,7 +22,7 @@ describe('MIME de una respuesta con Unicode', () => {
     const bytes = Buffer.from(result.raw, 'base64url');
     const email = await PostalMime.parse(bytes);
     expect(email.from?.address).toBe(input.from);
-    expect(email.to).toEqual([{ address: input.target.to.address, name: '' }]);
+    expect(email.to).toEqual([input.target.to]);
     expect(email.cc).toBeUndefined();
     expect(email.bcc).toBeUndefined();
     expect(email.subject).toBe(input.target.subject);

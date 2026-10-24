@@ -19,10 +19,19 @@ import {
   writingProfileRow,
 } from '../../tests/fixtures/writing-profile';
 import { generateReplyForThread } from './generate-reply';
+import {
+  knowledgeFragment,
+  knowledgeConfiguration,
+} from '../../tests/fixtures/knowledge';
+import { routeSources } from '@/modules/source-router/route-sources';
+import { knowledgeTokenUpperBound } from '@/modules/knowledge/retriever';
+import { reviewKnowledge } from '@/modules/knowledge/provenance';
 function fixture(
   name: keyof ReturnType<typeof createEmailFixtures> = 'pending',
 ) {
-  const thread = createEmailFixtures()[name];
+  const thread = createEmailFixtures(
+    'Hola, por favor confirma que has recibido este correo. Gracias.',
+  )[name];
   return {
     gmail: {
       listMessages: vi
@@ -58,6 +67,72 @@ function fixture(
   };
 }
 describe('selección y generación sin escrituras en Gmail', () => {
+  it.each([false, true])(
+    'MAIL-039 recupera evidencia, propaga el permiso del historial (%s) y limpia el contexto sin registrar contenido',
+    async (allowEmailHistory) => {
+      const input = fixture();
+      const knowledge = {
+        plan: routeSources(knowledgeConfiguration(), {
+          query: 'plazo',
+          intent: 'REQUEST_INFORMATION',
+          topics: [],
+        }),
+        matches: [knowledgeFragment()],
+        usedFallback: false,
+        tokenUpperBound: knowledgeTokenUpperBound([knowledgeFragment()]),
+        truncated: false,
+        review: reviewKnowledge([knowledgeFragment()]),
+        policy: { action: 'ALLOW_DRAFT' as const, reasons: [] },
+        sufficiency: {
+          status: 'NOT_REQUIRED' as const,
+          requirements: [],
+          missingInformation: [],
+          canPreparePartial: false,
+        },
+        allowPartialDrafts: false,
+      };
+      knowledge.plan.allowEmailHistory = allowEmailHistory;
+      const retrieveKnowledge = vi.fn(async (context) => {
+        expect(context.threadId).toBe(input.selection.threadId);
+        return knowledge;
+      });
+      const result = await generateReplyForThread({
+        ...input,
+        retrieveKnowledge,
+        styleExamplesLimit: 0,
+      });
+      expect(result.generation).toMatchObject({
+        knowledgeFragmentsUsed: 0,
+        knowledgeTokenUpperBound: knowledge.tokenUpperBound,
+      });
+      expect(
+        JSON.parse(input.text.generate.mock.calls[0][0].input).knowledge,
+      ).toEqual([knowledgeFragment()]);
+      for (const [call] of input.text.generate.mock.calls)
+        expect(JSON.parse(call.input).allowEmailHistory).toBe(
+          allowEmailHistory,
+        );
+      expect(knowledge.matches).toEqual([]);
+      expect(JSON.stringify(result)).not.toContain('El plazo de entrega');
+    },
+  );
+  it('MAIL-039 no genera con una recuperación fallida y no recupera para un hilo ya atendido', async () => {
+    const retrieveKnowledge = vi
+      .fn()
+      .mockRejectedValue(new Error('SOURCE_CONFIGURATION_CHANGED'));
+    const input = fixture();
+    await expect(
+      generateReplyForThread({
+        ...input,
+        retrieveKnowledge,
+        styleExamplesLimit: 0,
+      }),
+    ).rejects.toThrow('SOURCE_CONFIGURATION_CHANGED');
+    expect(input.text.generate).not.toHaveBeenCalled();
+    retrieveKnowledge.mockClear();
+    await generateReplyForThread({ ...fixture('answered'), retrieveKnowledge });
+    expect(retrieveKnowledge).not.toHaveBeenCalled();
+  });
   it('envía al generador ejemplos recuperados bajo demanda usando solo el perfil general y sin muestra guardada', async () => {
     const input = fixture();
     const mailbox = sentMailbox([

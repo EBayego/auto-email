@@ -35,7 +35,7 @@ describe('generación y creación de un único borrador de respuesta', () => {
         selection: { ...input.selection, resolvePreferences },
       });
       expect(result.draft?.status).toBe('CANCELLED');
-      expect(input.gmail.createDraft).not.toHaveBeenCalled();
+      expect(input.store.beginWrite).not.toHaveBeenCalled();
       expect(resolvePreferences).toHaveBeenCalledWith(
         'contact@example.invalid',
       );
@@ -118,7 +118,7 @@ describe('generación y creación de un único borrador de respuesta', () => {
       selection: { ...input.selection, resolveStyle: resolver },
     });
     expect(result.draft?.status).toBe('CANCELLED');
-    expect(input.gmail.createDraft).not.toHaveBeenCalled();
+    expect(input.store.beginWrite).not.toHaveBeenCalled();
   });
   it('acepta que Gmail reemplace el Message-ID propio conservando las cabeceras de respuesta', async () => {
     const input = draftFixture();
@@ -229,7 +229,7 @@ describe('generación y creación de un único borrador de respuesta', () => {
       status: 'CANCELLED',
       reason: 'THREAD_CHANGED',
     });
-    expect(input.gmail.createDraft).not.toHaveBeenCalled();
+    expect(input.store.beginWrite).not.toHaveBeenCalled();
     expect(input.rows[0].status).toBe('CANCELLED');
   });
   it('no escribe cuando el modelo devuelve falta de información', async () => {
@@ -254,9 +254,11 @@ describe('generación y creación de un único borrador de respuesta', () => {
   });
   it('un timeout posterior al POST queda bloqueado y no se vuelve a generar ni crear al repetir', async () => {
     const input = draftFixture();
-    input.gmail.createDraft.mockRejectedValue(
-      new ProviderError('google', 'UNAVAILABLE'),
-    );
+    input.gmail.createDraft.mockImplementation(async (_message, guard) => {
+      await guard?.prepare();
+      await guard?.beforeRequest();
+      throw new ProviderError('google', 'UNAVAILABLE');
+    });
     const first = await createReplyDraftForThread(input);
     expect(first.draft).toMatchObject({
       status: 'RECONCILIATION_REQUIRED',
@@ -289,7 +291,11 @@ describe('generación y creación de un único borrador de respuesta', () => {
     'trata una respuesta de Google inválida como escritura incierta sin reintentar: %o',
     async (response) => {
       const input = draftFixture();
-      input.gmail.createDraft.mockResolvedValue(response);
+      input.gmail.createDraft.mockImplementation(async (_message, guard) => {
+        await guard?.prepare();
+        await guard?.beforeRequest();
+        return response;
+      });
       const result = await createReplyDraftForThread(input);
       expect(result.draft?.status).toBe('RECONCILIATION_REQUIRED');
       expect(input.rows[0].status).toBe('UNCERTAIN');
@@ -345,7 +351,7 @@ describe('generación y creación de un único borrador de respuesta', () => {
       code: 'PERMISSION_DENIED',
     });
     expect(input.rows[0].status).toBe('CANCELLED');
-    expect(input.gmail.createDraft).not.toHaveBeenCalled();
+    expect(input.store.beginWrite).not.toHaveBeenCalled();
   });
   it('no confirma una lectura final que indica destinatario incorrecto, otro hilo o envío', async () => {
     for (const change of [

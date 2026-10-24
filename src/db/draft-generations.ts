@@ -8,6 +8,10 @@ import type {
   DraftStore,
 } from '@/modules/gmail/draft-contracts';
 import { responsePromptVersion } from '@/modules/response/prompts';
+import { DraftPreconditionError } from '@/modules/gmail/draft-contracts';
+import { replySourcesSchema } from '@/modules/response/sources';
+import { factualAuditSchema } from '@/modules/response/factual-validation';
+import { draftIntentSchema } from '@/modules/gmail/draft-intent';
 
 const columns =
   'id,user_id,gmail_account_id,thread_id,target_message_id,status,draft_id,draft_message_id,verified_at';
@@ -17,17 +21,30 @@ export function createDraftGenerationRepository(
   client: DataClient,
   userId: string,
   accountId: string,
+  job?: {
+    id: string;
+    leaseId: string;
+    threadId: string;
+    targetMessageId: string;
+  },
 ): DraftStore {
   requireUuid(userId);
   requireUuid(accountId);
-  const authorize = async () => {
+  if (job) {
+    requireUuid(job.id);
+    requireUuid(job.leaseId);
+    if (!id(job.threadId) || !id(job.targetMessageId))
+      throw new DataAccessError('INVALID_INPUT');
+  }
+  const authorize = async (finalizing = false) => {
     const owner = createOwnerRepositories(client, userId);
-    if ((await owner.users.get())?.status !== 'ACTIVE')
+    const user = requireResource(await owner.users.get());
+    if (!finalizing && user.status !== 'ACTIVE')
       throw new DataAccessError('FORBIDDEN');
-    if (
-      requireResource(await owner.gmailAccounts.findById(accountId)).status !==
-      'CONNECTED'
-    )
+    const account = requireResource(
+      await owner.gmailAccounts.findById(accountId),
+    );
+    if (!finalizing && account.status !== 'CONNECTED')
       throw new DataAccessError('FORBIDDEN');
   };
   const checked = (
@@ -85,7 +102,9 @@ export function createDraftGenerationRepository(
     state: string,
   ) => {
     requireUuid(attempt);
-    await authorize();
+    // A pause forbids new writes, but cannot hide IDs already returned by Gmail
+    // or prevent recording a known cancellation before the HTTP request.
+    await authorize(true);
     const { data, error } = await client
       .from('draft_generations')
       .update(values)
@@ -101,11 +120,27 @@ export function createDraftGenerationRepository(
   return Object.freeze<DraftStore>({
     find,
     async reserve(input: DraftReservation) {
+      const sources = replySourcesSchema.safeParse(input.sourcesUsed ?? []);
+      const intent = draftIntentSchema.optional().safeParse(input.intent);
+      const factual = factualAuditSchema
+        .optional()
+        .safeParse(input.factualValidation);
       requireUuid(input.id);
       requireUuid(input.styleRevision);
       if (
+        !sources.success ||
+        !intent.success ||
+        !factual.success ||
+        factual.data?.status === 'REVIEW_REQUIRED' ||
+        (input.policyRevision !== undefined &&
+          !/^[a-f0-9]{32}$/.test(input.policyRevision)) ||
+        (input.knowledgeRevision !== undefined &&
+          !/^[a-f0-9]{32}$/.test(input.knowledgeRevision)) ||
         !id(input.threadId) ||
         !id(input.targetMessageId) ||
+        (job &&
+          (input.threadId !== job.threadId ||
+            input.targetMessageId !== job.targetMessageId)) ||
         !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(input.model) ||
         ![input.inputTokens, input.outputTokens].every(
           (n) => Number.isSafeInteger(n) && n >= 0 && n <= 2147483647,
@@ -126,6 +161,12 @@ export function createDraftGenerationRepository(
           prompt_version: responsePromptVersion,
           input_tokens: input.inputTokens,
           output_tokens: input.outputTokens,
+          sources_used: sources.data,
+          policy_revision: input.policyRevision,
+          knowledge_revision: input.knowledgeRevision,
+          factual_validation: factual.data,
+          delivery_intent: intent.data,
+          email_job_id: job?.id,
         })
         .select(columns)
         .single();
@@ -155,6 +196,31 @@ export function createDraftGenerationRepository(
         throw new DataAccessError('UNAVAILABLE');
       return { acquired: false, record };
     },
+    async beginWrite(attempt, threadId, targetMessageId) {
+      requireUuid(attempt);
+      if (
+        !id(threadId) ||
+        !id(targetMessageId) ||
+        (job &&
+          (threadId !== job.threadId ||
+            targetMessageId !== job.targetMessageId))
+      )
+        throw new DataAccessError('INVALID_INPUT');
+      const { data, error } = await client.rpc('begin_draft_write', {
+        p_user_id: userId,
+        p_account_id: accountId,
+        p_attempt_id: attempt,
+        p_thread_id: threadId,
+        p_target_message_id: targetMessageId,
+        p_job_id: job?.id,
+        p_lease_id: job?.leaseId,
+      });
+      if (error?.message === 'DAILY_DRAFT_LIMIT')
+        throw new DraftPreconditionError('DAILY_DRAFT_LIMIT');
+      if (error || typeof data !== 'boolean')
+        throw new DataAccessError('UNAVAILABLE');
+      return data;
+    },
     async created(attempt, draftId, messageId) {
       if (!id(draftId) || !id(messageId))
         throw new DataAccessError('INVALID_INPUT');
@@ -177,12 +243,15 @@ export function createDraftGenerationRepository(
         ![
           'THREAD_CHANGED',
           'PREWRITE_FAILED',
+          'DAILY_DRAFT_LIMIT',
           'GMAIL_WRITE_UNCERTAIN',
           'PERSISTENCE_FAILED',
           'VERIFICATION_FAILED',
         ].includes(reason) ||
         (status === 'CANCELLED' &&
-          !['THREAD_CHANGED', 'PREWRITE_FAILED'].includes(reason)) ||
+          !['THREAD_CHANGED', 'PREWRITE_FAILED', 'DAILY_DRAFT_LIMIT'].includes(
+            reason,
+          )) ||
         (identifiers &&
           (status !== 'UNCERTAIN' ||
             [identifiers.draftId, identifiers.draftMessageId].some(

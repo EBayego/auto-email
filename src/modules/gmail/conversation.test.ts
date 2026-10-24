@@ -227,8 +227,8 @@ describe('reconstrucción de conversaciones (MAIL-016)', () => {
     expect(context.messages[1].answeredByMessageIds).toEqual([]);
     expect(context.targetMessageId).toBe('bob');
     expect(context.isAlreadyAnswered).toBe(false);
-    expect(context.issues).toContain('AMBIGUOUS_RECIPIENTS');
-    expect(context.status).toBe('REVIEW_REQUIRED');
+    expect(context.issues).not.toContain('AMBIGUOUS_RECIPIENTS');
+    expect(context.status).toBe('NEEDS_CLASSIFICATION');
     expect(
       context.participants.map((participant) => participant.address).sort(),
     ).toEqual(['ana@example.invalid', 'bob@example.invalid', owner].sort());

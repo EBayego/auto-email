@@ -72,3 +72,12 @@ jobs:
       - name: Detener Supabase local
         if: always()
         run: npm run db:stop
+
+      - name: Guardar métricas del Knowledge Engine
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: knowledge-evaluation
+          path: coverage/knowledge/report.json
+          if-no-files-found: ignore
+          retention-days: 7

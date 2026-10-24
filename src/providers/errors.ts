@@ -8,7 +8,11 @@ export type ProviderErrorCode =
   | 'NOT_FOUND'
   | 'REQUEST_REJECTED'
   | 'INVALID_RESPONSE'
+  | 'QUOTA_EXCEEDED'
+  | 'QUOTA_WAIT_EXHAUSTED'
+  | 'CANCELLED'
   | 'UNAVAILABLE';
+// Operational controls carry categorical metadata only, never provider bodies.
 
 export class ProviderError extends Error {
   readonly provider: ProviderName;
@@ -16,10 +20,17 @@ export class ProviderError extends Error {
   readonly retryable: boolean;
   readonly httpStatus?: number;
   readonly retryAfterMs?: number;
+  readonly attempts?: number;
+  readonly retryStop?: 'ATTEMPTS' | 'TIME' | 'UNSAFE';
   constructor(
     provider: ProviderName,
     code: ProviderErrorCode,
-    details: { httpStatus?: number; retryAfterMs?: number } = {},
+    details: {
+      httpStatus?: number;
+      retryAfterMs?: number;
+      attempts?: number;
+      retryStop?: 'ATTEMPTS' | 'TIME' | 'UNSAFE';
+    } = {},
   ) {
     super(`${provider}: ${code}`);
     this.name = 'ProviderError';
@@ -28,6 +39,8 @@ export class ProviderError extends Error {
     this.retryable = code === 'RATE_LIMITED' || code === 'UNAVAILABLE';
     this.httpStatus = details.httpStatus;
     this.retryAfterMs = details.retryAfterMs;
+    this.attempts = details.attempts;
+    this.retryStop = details.retryStop;
   }
 }
 

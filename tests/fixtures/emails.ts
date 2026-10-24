@@ -61,8 +61,9 @@ function message(
   };
 }
 
-export function createEmailFixtures() {
-  const question = 'Hola, ¿podemos reunirnos el próximo martes? Gracias.';
+export function createEmailFixtures(
+  question = 'Hola, ¿podemos reunirnos el próximo martes? Gracias.',
+) {
   const pending: SyntheticThread = {
     id: 'a100000000000001',
     messages: [message('b100000000000001', 'a100000000000001', question)],

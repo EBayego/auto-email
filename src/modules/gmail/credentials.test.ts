@@ -493,6 +493,16 @@ describe('almacenamiento y ciclo de vida de tokens Gmail', () => {
     expect(f.refreshAccessToken).toHaveBeenCalledOnce();
   });
 
+  it('conserva el guard de última validación al enlazar las credenciales de la cuenta', async () => {
+    const f = fixture();
+    f.cache();
+    const guard = {
+      prepare: vi.fn(async () => {}),
+      beforeRequest: vi.fn(async () => {}),
+    };
+    await f.connection().client.createDraft({ raw: 'dGVzdA' }, guard);
+    expect(f.createDraft).toHaveBeenCalledWith({ raw: 'dGVzdA' }, guard);
+  });
   it('dos rechazos 401 exigen reconectar y una escritura nunca se reintenta', async () => {
     const f = fixture();
     f.cache();

@@ -3,6 +3,7 @@ import { getAccount } from '@/app/_lib/auth';
 import { signOut } from '@/app/(auth)/actions';
 import { getUserData } from '@/app/_lib/data';
 import { gmailOAuthMessages } from '@/modules/gmail/messages';
+import { DocumentsPanel } from './documents-panel';
 
 export const metadata = { title: 'Tu cuenta · Auto Email' };
 export const dynamic = 'force-dynamic';
@@ -10,12 +11,12 @@ export const dynamic = 'force-dynamic';
 export default async function AccountPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; gmail?: string }>;
+  searchParams: Promise<{ error?: string; gmail?: string; execution?: string }>;
 }) {
   const result = await getAccount();
   if (result.status === 'unauthenticated' || result.status === 'forbidden')
     redirect('/login');
-  const { error, gmail } = await searchParams;
+  const { error, gmail, execution } = await searchParams;
   let gmailAccount = null;
   let gmailUnavailable = false;
   if (result.status === 'authenticated') {
@@ -76,6 +77,17 @@ export default async function AccountPage({
               )}
             </p>
           )}
+          {execution === 'SAVED' && (
+            <p role="status" className="description">
+              Configuración guardada.
+            </p>
+          )}
+          {execution === 'QUEUED' && (
+            <p role="status" className="description">
+              Revisión solicitada. Se ejecutará cuando el servicio esté
+              disponible, con los mismos controles de seguridad y límite diario.
+            </p>
+          )}
           {gmailUnavailable ? (
             <p role="alert" className="form-error">
               No podemos consultar tu conexión con Gmail en este momento.
@@ -96,9 +108,43 @@ export default async function AccountPage({
             {gmailAccount ? 'Volver a conectar Gmail' : 'Conectar Gmail'}
           </a>
           {gmailAccount?.status === 'CONNECTED' && (
-            <form action="/api/gmail/check" method="post">
-              <button className="button button-secondary" type="submit">
-                Comprobar conexión
+            <>
+              <form action="/api/automation" method="post">
+                <button
+                  className="button button-secondary"
+                  name="action"
+                  value="pause"
+                  type="submit"
+                >
+                  Pausar cuenta Gmail
+                </button>
+              </form>
+              <form action="/api/automation" method="post">
+                <button
+                  className="button button-secondary"
+                  name="action"
+                  value="run"
+                  type="submit"
+                >
+                  Revisar correos ahora
+                </button>
+              </form>
+              <form action="/api/gmail/check" method="post">
+                <button className="button button-secondary" type="submit">
+                  Comprobar conexión
+                </button>
+              </form>
+            </>
+          )}
+          {gmailAccount?.status === 'PAUSED' && (
+            <form action="/api/automation" method="post">
+              <button
+                className="button button-secondary"
+                name="action"
+                value="resume"
+                type="submit"
+              >
+                Reactivar cuenta Gmail
               </button>
             </form>
           )}
@@ -127,6 +173,52 @@ export default async function AccountPage({
               <dd>{result.account.settings.maxDailyDrafts}</dd>
             </div>
           </dl>
+          <form
+            action="/api/automation"
+            method="post"
+            className="execution-form"
+          >
+            <input type="hidden" name="action" value="settings" />
+            <label>
+              <input
+                type="checkbox"
+                name="automationEnabled"
+                value="true"
+                defaultChecked={result.account.settings.automationEnabled}
+              />{' '}
+              Automatización activada
+            </label>
+            <label>
+              Intervalo de comprobación (segundos)
+              <input
+                type="number"
+                name="pollIntervalSeconds"
+                min="60"
+                max="86400"
+                required
+                defaultValue={result.account.settings.pollIntervalSeconds}
+              />
+            </label>
+            <label>
+              Límite de borradores por día (UTC)
+              <input
+                type="number"
+                name="maxDailyDrafts"
+                min="0"
+                max="1000"
+                required
+                defaultValue={result.account.settings.maxDailyDrafts}
+              />
+            </label>
+            <p className="description">
+              Un límite de 0 impide crear borradores. La revisión manual no
+              activa la automatización y respeta este límite.
+            </p>
+            <button className="button button-secondary" type="submit">
+              Guardar ajustes
+            </button>
+          </form>
+          <DocumentsPanel />
           <p className="description">
             La revisión y el envío de tus respuestas siempre estarán en tus
             manos.

@@ -1,11 +1,12 @@
-import type { TextGenerationClient } from '@/providers/contracts';
-import { validateWritingProfile } from '@/modules/identity/writing-profile';
+import {
+  textGenerationAttemptLimit,
+  type TextGenerationClient,
+} from '@/providers/contracts';
 import {
   ResponseGenerationError,
-  responseLimits,
   type GeneratedResponse,
   type ResponseGenerationInput,
-  type ResponseGenerationResult,
+  type GenerateReplyResult,
   type ResponseGenerator,
   type ResponseWarning,
 } from './contracts';
@@ -13,7 +14,6 @@ import {
   generatedResponseSchema,
   parseGeneratedResponse,
   parseResponseVerification,
-  record,
   responseVerificationSchema,
 } from './schema';
 import {
@@ -21,149 +21,63 @@ import {
   responseVerificationInstructions,
 } from './prompts';
 import { detectReplyLanguage } from './language';
+import { violatesStylePreferences } from '@/modules/identity/style-preferences';
+import { knowledgeReference } from '@/modules/knowledge/provenance';
+import { claimsMissingEvidence } from '@/modules/knowledge/sufficiency';
 import {
-  effectiveStylePreferences,
-  renderStylePreference,
-  violatesStylePreferences,
-} from '@/modules/identity/style-preferences';
+  promptSecurityVersion,
+  responseOutputHasInjection,
+} from '@/modules/security/prompt-injection';
 
 export type {
+  GenerateReplyInput,
+  GenerateReplyResult,
   ResponseGenerator,
   ResponseGenerationInput,
   ResponseGenerationResult,
 } from './contracts';
 export { ResponseGenerationError } from './contracts';
-const normalize = (text: string) =>
-  text.normalize('NFKC').replace(/\s+/gu, ' ').trim().toLowerCase();
-const text = (value: unknown, limit: number): value is string =>
-  typeof value === 'string' &&
-  !!value.trim() &&
-  value.length <= limit &&
-  !/\p{Cc}/u.test(value.replace(/[\t\r\n]/gu, ''));
-
-function prepare(input: ResponseGenerationInput) {
-  const conversation = input?.conversation;
-  if (
-    !record(conversation) ||
-    conversation.schemaVersion !== 1 ||
-    (conversation.subject !== null &&
-      (typeof conversation.subject !== 'string' ||
-        conversation.subject.length > 4096 ||
-        /\p{Cc}/u.test(conversation.subject))) ||
-    !Array.isArray(conversation.messages) ||
-    !conversation.messages.length ||
-    conversation.messages.length > responseLimits.messages ||
-    conversation.messages.some(
-      (message) =>
-        !record(message) ||
-        typeof message.speaker !== 'string' ||
-        !/^(?:owner|participant_\d{1,2})$/.test(message.speaker) ||
-        !text(message.text, 64 * 1024) ||
-        typeof message.isTarget !== 'boolean',
-    ) ||
-    conversation.messages.filter((message) => message.isTarget).length !== 1 ||
-    !conversation.messages.at(-1)!.isTarget ||
-    conversation.messages.at(-1)!.speaker === 'owner' ||
-    (input.styleExamples !== undefined &&
-      (!Array.isArray(input.styleExamples) ||
-        input.styleExamples.length > responseLimits.examples ||
-        input.styleExamples.some(
-          (example) =>
-            !record(example) ||
-            !text(example.text, responseLimits.exampleCharacters),
-        ))) ||
-    (input.userInstructions !== undefined &&
-      (!Array.isArray(input.userInstructions) ||
-        input.userInstructions.length > 5 ||
-        !input.userInstructions.every((instruction) => text(instruction, 300))))
-  )
-    throw new ResponseGenerationError('INVALID_INPUT');
-  const prepared = {
-    conversation: {
-      schemaVersion: 1,
-      subject: conversation.subject,
-      messages: conversation.messages.map((message) => ({
-        speaker: message.speaker,
-        text: message.text,
-        isTarget: message.isTarget,
-      })),
-      style: conversation.style
-        ? validateWritingProfile(conversation.style)
-        : null,
-    },
-    styleExamples: (input.styleExamples ?? []).map((example) => ({
-      text: example.text,
-    })),
-    stylePreferences: effectiveStylePreferences(
-      input.stylePreferences,
-      input.userInstructions,
-    ),
-  };
-  const result = {
-    ...prepared,
-    userInstructions: prepared.stylePreferences.map(renderStylePreference),
-  };
-  if (Buffer.byteLength(JSON.stringify(result)) > responseLimits.inputBytes)
-    throw new ResponseGenerationError('INVALID_INPUT');
-  return result;
-}
-
-// Verify literal citations and concrete values without trusting the model's own verdict.
-function groundingIssue(
-  candidate: GeneratedResponse,
-  conversation: ReturnType<typeof prepare>['conversation'],
-): ResponseWarning | null {
-  const commitment =
-    /\b(?:(?:we|i)\s+(?:can|will|shall|offer|provide|agree|accept|guarantee|promise)|podemos|ofrecemos|aceptamos|garantizamos|revisaremos|enviaremos|me comprometo|nos comprometemos|estoy disponible|estamos disponibles|nuestro equipo)\b/iu;
-  for (const evidence of candidate.evidence) {
-    const source = conversation.messages[evidence.messageIndex];
-    if (
-      !source ||
-      !normalize(source.text).includes(normalize(evidence.quote)) ||
-      !normalize(candidate.bodyText!).includes(normalize(evidence.claim))
-    )
-      return 'UNVERIFIED_EVIDENCE';
-    if (source.speaker !== 'owner' && commitment.test(evidence.claim))
-      return 'UNSUPPORTED_COMMITMENT';
-  }
-  for (const clause of candidate
-    .bodyText!.split(/[.!?\n]+/u)
-    .filter((part) => commitment.test(part))) {
-    if (
-      !candidate.evidence.some(
-        (evidence) =>
-          conversation.messages[evidence.messageIndex]?.speaker === 'owner' &&
-          commitment.test(evidence.claim) &&
-          normalize(clause).includes(normalize(evidence.claim)),
-      )
-    )
-      return 'UNSUPPORTED_COMMITMENT';
-  }
-  const values = (value: string) =>
-    (
-      value.match(
-        /https?:\/\/[^\s<>]+|www\.[^\s<>]+|[^\s<>@]+@[^\s<>@]+|\d+(?:[.,:/-]\d+)*(?:\s*[%€$])?/gu,
-      ) ?? []
-    ).map((token) => {
-      const trimmed = token.replace(/[.,;!?)]*$/u, '').replace(/\s+/gu, '');
-      return /^https?:|^www\./i.test(trimmed) ? trimmed : trimmed.toLowerCase();
-    });
-  const quoted = new Set(
-    candidate.evidence.flatMap((evidence) => values(evidence.quote)),
-  );
-  if (values(candidate.bodyText!).some((value) => !quoted.has(value)))
-    return 'UNSUPPORTED_FACT';
-  return null;
-}
-
+import { prepareGenerateReplyInput as prepare } from './context';
+import { finalizeReplyResult } from './result';
+import { createResponsePolicyEngine } from '@/modules/policy/response-policy';
+import { applyResponsePolicy } from '@/modules/policy/policy-result';
+import { parseGenerateReplyInput } from './input';
+import {
+  validateResponseFacts,
+  factualWarning,
+  rejectFactualValidation,
+  applyFactualValidation,
+  type FactualValidation,
+} from './factual-validation';
 export function createResponseGenerator(
+  client: TextGenerationClient,
+  options: { unpersonalizedEvaluation?: boolean } = {},
+): ResponseGenerator {
+  const generator = createBaseResponseGenerator(client, options);
+  return Object.freeze({
+    async generate(raw: ResponseGenerationInput): Promise<GenerateReplyResult> {
+      const input = parseGenerateReplyInput(raw);
+      const policy = createResponsePolicyEngine(input.responsePolicy);
+      const before = policy.preflight(input);
+      if (before.action !== 'ALLOW_DRAFT')
+        return applyResponsePolicy(input, [before]);
+      const response = applyFactualValidation(
+        input,
+        await generator.generate(input),
+      );
+      const after = policy.postflight(input, response);
+      return applyResponsePolicy(input, [before, after], response);
+    },
+  });
+}
+function createBaseResponseGenerator(
   client: TextGenerationClient,
   options: { unpersonalizedEvaluation?: boolean } = {},
 ): ResponseGenerator {
   return Object.freeze({
     async generate(
       input: ResponseGenerationInput,
-    ): Promise<ResponseGenerationResult> {
+    ): Promise<GenerateReplyResult> {
       const prepared = prepare(input);
       if (
         options.unpersonalizedEvaluation &&
@@ -172,6 +86,14 @@ export function createResponseGenerator(
           prepared.stylePreferences.length)
       )
         throw new ResponseGenerationError('INVALID_INPUT');
+      const { historicalReferences, ...modelContext } = prepared;
+      const modelKnowledge = prepared.knowledge.map(
+        ({ audience_kind: _kind, audience_key: _key, ...fragment }) => {
+          void _kind;
+          void _key;
+          return fragment;
+        },
+      );
       const target = prepared.conversation.messages.at(-1)!;
       const targetLanguage = detectReplyLanguage(target.text);
       const languagePreference = prepared.stylePreferences.find(
@@ -186,24 +108,59 @@ export function createResponseGenerator(
         recipient: target.speaker,
         targetLanguage: expectedLanguage ?? 'und',
       };
+      let factualValidation: FactualValidation | undefined;
       let inputTokens = 0,
         outputTokens = 0,
         modelCalls = 0;
-      const result = (
-        candidate: GeneratedResponse,
-      ): ResponseGenerationResult => ({
-        ...candidate,
-        warnings: [
-          ...new Set<ResponseWarning>([
-            ...candidate.warnings,
-            'HUMAN_REVIEW_REQUIRED',
-          ]),
-        ],
-        inputTokens,
-        outputTokens,
-        modelCalls,
-        examplesUsed: prepared.styleExamples.length,
-      });
+      const result = (candidate: GeneratedResponse): GenerateReplyResult =>
+        finalizeReplyResult(
+          {
+            ...candidate,
+            factualValidation,
+            warnings: [
+              ...new Set<ResponseWarning>([
+                ...candidate.warnings,
+                'HUMAN_REVIEW_REQUIRED',
+                ...(candidate.status === 'PARTIAL'
+                  ? ['MISSING_INFORMATION' as const]
+                  : []),
+              ]),
+            ],
+            inputTokens,
+            outputTokens,
+            modelCalls,
+            examplesUsed: prepared.styleExamples.length,
+            needsHumanInput:
+              candidate.status === 'INSUFFICIENT_CONTEXT' ||
+              candidate.status === 'PARTIAL' ||
+              (candidate.status === 'BLOCKED' &&
+                candidate.warnings.includes('HIGH_RISK')),
+            evidenceSufficiency: prepared.evidenceSufficiency,
+            knowledgeReferences: [
+              ...new Set(
+                candidate.evidence.flatMap((e) =>
+                  'knowledgeIndex' in e ? [e.knowledgeIndex] : [],
+                ),
+              ),
+            ].map((knowledgeIndex) => {
+              const fragment = prepared.knowledge[knowledgeIndex];
+              return {
+                ...knowledgeReference(
+                  fragment,
+                  new Date().toISOString().slice(0, 10),
+                ),
+                knowledgeIndex,
+                sourceId: fragment.source_id,
+                documentId: fragment.document_id,
+                version: fragment.version,
+                chunkId: fragment.chunk_id,
+              };
+            }),
+            knowledgePolicy: prepared.knowledgePolicy,
+          },
+          prepared.conversation.subject,
+          historicalReferences,
+        );
       const abstain = (
         warning: ResponseWarning,
         language: string,
@@ -230,7 +187,9 @@ export function createResponseGenerator(
           jsonSchema: { name, schema },
         });
         if (
-          ![1, 2].includes(generated.attempts ?? 1) ||
+          !Number.isInteger(generated.attempts ?? 1) ||
+          (generated.attempts ?? 1) < 1 ||
+          (generated.attempts ?? 1) > textGenerationAttemptLimit ||
           ![generated.inputTokens, generated.outputTokens].every(
             (n) => Number.isSafeInteger(n) && n >= 0 && n <= 2147483647,
           )
@@ -242,20 +201,101 @@ export function createResponseGenerator(
         return generated.text;
       };
       try {
+        if (prepared.knowledgePolicy.action === 'REVIEW_REQUIRED')
+          return result(abstain(prepared.knowledgePolicy.reasons[0], 'und'));
         if (!prepared.conversation.style && !options.unpersonalizedEvaluation)
           return result(abstain('STYLE_PROFILE_UNAVAILABLE', 'und'));
+        const missingEvidence =
+          prepared.evidenceSufficiency.status === 'NEEDS_HUMAN_INPUT';
+        const partialAllowed =
+          prepared.allowPartialDrafts &&
+          prepared.evidenceSufficiency.requirements.every(
+            (r) =>
+              ![
+                'CALENDAR',
+                'ORDER_STATUS',
+                'OWNER_DECISION',
+                'ATTACHMENT',
+              ].includes(r.kind),
+          );
+        if (
+          missingEvidence &&
+          (!partialAllowed || !prepared.evidenceSufficiency.canPreparePartial)
+        )
+          return result({
+            ...abstain('KNOWLEDGE_INSUFFICIENT', expectedLanguage ?? 'und'),
+            missingInformation: prepared.evidenceSufficiency.missingInformation,
+          });
         const candidate = parseGeneratedResponse(
           await generate(
             options.unpersonalizedEvaluation
               ? responseInstructions +
                   '\nEvaluación sin personalización: no tienes perfil ni ejemplos del titular. Usa un tono neutro y el idioma objetivo, manteniendo todas las reglas de seguridad y verificación.'
               : responseInstructions,
-            { ...prepared, replyTask },
+            {
+              ...modelContext,
+              knowledge: modelKnowledge,
+              replyTask,
+              security: {
+                version: promptSecurityVersion,
+                operation: 'PROPOSE_REPLY',
+                tools: [],
+              },
+            },
             'generated_response_v1',
             generatedResponseSchema,
           ),
         );
-        if (candidate.status !== 'READY') return result(candidate);
+        // Check the raw candidate before any factual/style sanitization and
+        // before exposing it to the independent verifier.
+        if (
+          responseOutputHasInjection(candidate) ||
+          candidate.warnings.includes('PROMPT_INJECTION')
+        )
+          return result({
+            status: 'BLOCKED',
+            bodyText: null,
+            language: candidate.language,
+            missingInformation: [],
+            evidence: [],
+            warnings: ['PROMPT_INJECTION'],
+          });
+        if (candidate.status !== 'READY' && candidate.status !== 'PARTIAL')
+          return result(candidate);
+        if (
+          (candidate.status === 'PARTIAL' && !partialAllowed) ||
+          (missingEvidence && candidate.status !== 'PARTIAL')
+        )
+          return result({
+            ...abstain('KNOWLEDGE_INSUFFICIENT', candidate.language),
+            missingInformation: prepared.evidenceSufficiency.missingInformation
+              .length
+              ? prepared.evidenceSufficiency.missingInformation
+              : ['Se necesita completar la información de la propuesta.'],
+          });
+        if (candidate.status === 'PARTIAL')
+          candidate.missingInformation = [
+            ...new Set([
+              ...prepared.evidenceSufficiency.missingInformation,
+              ...candidate.missingInformation,
+            ]),
+          ].slice(0, 8);
+        if (
+          candidate.status === 'PARTIAL' &&
+          claimsMissingEvidence(
+            prepared.evidenceSufficiency,
+            candidate.bodyText!,
+          )
+        ) {
+          factualValidation = rejectFactualValidation(
+            validateResponseFacts(input, candidate),
+            'MISSING_EVIDENCE',
+          );
+          return result({
+            ...abstain('UNSUPPORTED_FACT', candidate.language),
+            missingInformation: prepared.evidenceSufficiency.missingInformation,
+          });
+        }
         if (
           violatesStylePreferences(
             candidate.bodyText!,
@@ -277,17 +317,37 @@ export function createResponseGenerator(
               expectedLanguage ?? candidate.language,
             ),
           );
-        const issue = groundingIssue(candidate, prepared.conversation);
-        if (issue) return result(abstain(issue, candidate.language));
+        factualValidation = validateResponseFacts(input, candidate);
+        const issue =
+          factualValidation.status === 'REVIEW_REQUIRED'
+            ? factualWarning(factualValidation)
+            : null;
+        if (issue)
+          return result({
+            ...abstain(issue, candidate.language),
+            missingInformation: factualValidation.missingInformation,
+          });
         const verification = parseResponseVerification(
           await generate(
             responseVerificationInstructions,
             {
+              security: {
+                version: promptSecurityVersion,
+                operation: 'VERIFY_REPLY',
+                tools: [],
+              },
               replyTask,
               conversation: { messages: prepared.conversation.messages },
+              knowledge: modelKnowledge,
+              allowEmailHistory: prepared.allowEmailHistory,
+              knowledgeEvaluatedAt: prepared.knowledgeEvaluatedAt,
+              evidenceSufficiency: prepared.evidenceSufficiency,
+              allowPartialDrafts: partialAllowed,
               userInstructions: prepared.userInstructions,
               stylePreferences: prepared.stylePreferences,
               proposal: {
+                status: candidate.status,
+                missingInformation: candidate.missingInformation,
                 bodyText: candidate.bodyText,
                 language: candidate.language,
                 evidence: candidate.evidence,
@@ -297,24 +357,39 @@ export function createResponseGenerator(
             responseVerificationSchema,
           ),
         );
-        if (verification.verdict !== 'SUPPORTED')
+        if (verification.verdict !== 'SUPPORTED') {
+          if (
+            verification.issues.some((issue) =>
+              [
+                'UNSUPPORTED_FACT',
+                'UNSUPPORTED_COMMITMENT',
+                'MISSING_INFORMATION',
+              ].includes(issue),
+            )
+          )
+            factualValidation = rejectFactualValidation(factualValidation);
           return result({
             ...abstain('MISSING_INFORMATION', candidate.language),
             status: verification.verdict,
             missingInformation:
               verification.verdict === 'BLOCKED'
                 ? []
-                : [
-                    'La propuesta necesita respaldo o una decisión del titular.',
-                  ],
+                : factualValidation.missingInformation.length
+                  ? factualValidation.missingInformation
+                  : [
+                      'La propuesta necesita respaldo o una decisión del titular.',
+                    ],
             warnings: verification.issues,
           });
+        }
         return result(candidate);
       } finally {
         prepared.conversation.messages.length = 0;
+        prepared.historicalReferences.length = 0;
         prepared.styleExamples.length = 0;
         prepared.userInstructions.length = 0;
         prepared.stylePreferences.length = 0;
+        prepared.knowledge.length = 0;
       }
     },
   });

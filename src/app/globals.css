@@ -214,3 +214,75 @@ a {
   margin: 0.5rem 0 0;
   font-size: 1.1rem;
 }
+.execution-form {
+  display: grid;
+  gap: 1rem;
+  max-width: 30rem;
+  margin-block: 2rem;
+}
+.execution-form label {
+  display: grid;
+  gap: 0.5rem;
+}
+.execution-form label:has(input[type='checkbox']) {
+  display: flex;
+  align-items: center;
+}
+.execution-form input[type='number'] {
+  padding: 0.65rem;
+  border: 1px solid #d4dbd2;
+  border-radius: 0.4rem;
+  font: inherit;
+}
+.documents-panel {
+  margin-top: 2rem;
+  border-top: 1px solid var(--border, #ddd);
+  padding-top: 1.5rem;
+}
+.documents-list {
+  list-style: none;
+  padding: 0;
+}
+.documents-list li {
+  margin: 1rem 0;
+  overflow-wrap: anywhere;
+}
+.documents-list .button {
+  margin: 0.25rem 0.5rem 0.25rem 0;
+}
+.knowledge-excerpt {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+.documents-panel input[type='search'] {
+  padding: 0.65rem;
+  border: 1px solid #d4dbd2;
+  border-radius: 0.4rem;
+  font: inherit;
+}
+.knowledge-sources {
+  margin-block: 2rem;
+  padding-block: 1rem;
+  border-block: 1px solid #d4dbd2;
+}
+.knowledge-sources details {
+  margin-block: 1rem;
+}
+.knowledge-sources summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.knowledge-sources input:not([type='checkbox']),
+.knowledge-sources select {
+  padding: 0.65rem;
+  border: 1px solid #d4dbd2;
+  border-radius: 0.4rem;
+  font: inherit;
+  max-width: 100%;
+}
+.source-assignment {
+  display: grid;
+  gap: 0.5rem;
+  margin-block: 1rem;
+  overflow-wrap: anywhere;
+}

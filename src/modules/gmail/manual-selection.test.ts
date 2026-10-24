@@ -225,7 +225,7 @@ describe('selector manual de correos pendientes (MAIL-019)', () => {
     );
     expect(result.status).toBe('SELECTED');
   });
-  it('deja los adjuntos sin soporte y los destinatarios ambiguos para revisión', async () => {
+  it('deja adjuntos para revisión y admite destinatarios visibles de grupo', async () => {
     const attachment = createEmailFixtures().attachment;
     expect(
       await selectPendingEmail(reader(attachment), {
@@ -243,8 +243,8 @@ describe('selector manual de correos pendientes (MAIL-019)', () => {
       ...input,
       threadId: customThreadId,
     });
-    expect(result.status).toBe('REVIEW_REQUIRED');
-    expect(result.reasons).toContain('AMBIGUOUS_RECIPIENTS');
+    expect(result.status).toBe('SELECTED');
+    expect(result.reasons).not.toContain('AMBIGUOUS_RECIPIENTS');
   });
   it('respeta el límite de contexto sin truncar silenciosamente el historial', async () => {
     const long = thread(

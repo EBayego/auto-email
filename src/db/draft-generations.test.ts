@@ -21,7 +21,8 @@ const query = {
   single,
 };
 const from = vi.fn(() => query);
-const client = { from } as unknown as DataClient;
+const rpc = vi.fn();
+const client = { from, rpc } as unknown as DataClient;
 const repo = () =>
   createDraftGenerationRepository(
     client,
@@ -71,6 +72,32 @@ describe('registro de borradores con propietario y reserva persistente', () => {
     } as unknown as ReturnType<typeof createOwnerRepositories>);
     maybeSingle.mockResolvedValue({ data: row(), error: null });
     single.mockResolvedValue({ data: row(), error: null });
+    rpc.mockResolvedValue({ data: true, error: null });
+  });
+  it('consume el permiso de escritura con propietario, cuenta e identidad de la reserva', async () => {
+    expect(await repo().beginWrite(row().id, 'thread21', 'target21')).toBe(
+      true,
+    );
+    expect(rpc).toHaveBeenCalledWith('begin_draft_write', {
+      p_user_id: profileWork.userId,
+      p_account_id: profileWork.gmailAccountId,
+      p_attempt_id: row().id,
+      p_thread_id: 'thread21',
+      p_target_message_id: 'target21',
+      p_job_id: undefined,
+      p_lease_id: undefined,
+    });
+    rpc.mockResolvedValueOnce({ data: false, error: null });
+    expect(await repo().beginWrite(row().id, 'thread21', 'target21')).toBe(
+      false,
+    );
+    rpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'private-error' },
+    });
+    await expect(
+      repo().beginWrite(row().id, 'thread21', 'target21'),
+    ).rejects.toMatchObject({ code: 'UNAVAILABLE', message: 'UNAVAILABLE' });
   });
   it('reserva con INSERT y guarda únicamente IDs, versiones y métricas', async () => {
     const input = {
@@ -88,11 +115,45 @@ describe('registro de borradores con propietario y reserva persistente', () => {
       user_id: profileWork.userId,
       gmail_account_id: profileWork.gmailAccountId,
       target_message_id: 'target21',
-      prompt_version: 'mail028-v2',
+      prompt_version: 'mail049-v1',
+      sources_used: [],
     });
     expect(JSON.stringify(payload)).not.toMatch(
       /private|bodyText|recipient|raw/,
     );
+  });
+  it('EPIC-07 persists the trusted knowledge revision and rejects arbitrary source configurations', async () => {
+    await repo().reserve({
+      ...reservation(),
+      knowledgeRevision: 'a'.repeat(32),
+    });
+    expect(query.insert.mock.calls[0][0].knowledge_revision).toBe(
+      'a'.repeat(32),
+    );
+    query.insert.mockClear();
+    await expect(
+      repo().reserve({
+        ...reservation(),
+        knowledgeRevision: 'untrusted revision',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    expect(query.insert).not.toHaveBeenCalled();
+  });
+  it('MAIL-043 persiste únicamente referencias estructuradas de fuentes utilizadas', async () => {
+    const sourcesUsed = [{ kind: 'THREAD_MESSAGE' as const, messageIndex: 0 }];
+    await repo().reserve({ ...reservation(), sourcesUsed });
+    expect(query.insert.mock.calls[0][0].sources_used).toEqual(sourcesUsed);
+  });
+  it('MAIL-043 rechaza cuerpos y metadatos ajenos al esquema de procedencia', async () => {
+    await expect(
+      repo().reserve({
+        ...reservation(),
+        sourcesUsed: [
+          { kind: 'THREAD_MESSAGE', messageIndex: 0, quote: 'private-body' },
+        ],
+      } as never),
+    ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    expect(query.insert).not.toHaveBeenCalled();
   });
   it('un conflicto UNIQUE devuelve el intento previo sin sobrescribirlo', async () => {
     single.mockResolvedValue({
@@ -175,10 +236,22 @@ describe('registro de borradores con propietario y reserva persistente', () => {
       code: 'FORBIDDEN',
     });
     user.mockResolvedValue({ status: 'DISABLED' });
-    await expect(
-      repo().created(row().id, 'draft', 'message'),
-    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(repo().reserve(reservation())).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
     expect(from).not.toHaveBeenCalled();
+  });
+  it('una pausa o suspensión no impide registrar el resultado de un intento ya reservado', async () => {
+    user.mockResolvedValue({ id: profileWork.userId, status: 'DISABLED' });
+    account.mockResolvedValue({ status: 'PAUSED' });
+    await repo().created(row().id, 'draft', 'message');
+    await repo().stop(row().id, 'CANCELLED', 'PREWRITE_FAILED');
+    expect(query.eq).toHaveBeenCalledWith('id', row().id);
+    expect(query.eq).toHaveBeenCalledWith('user_id', profileWork.userId);
+    expect(query.eq).toHaveBeenCalledWith(
+      'gmail_account_id',
+      profileWork.gmailAccountId,
+    );
   });
   it.each([
     { id: 'bad' },

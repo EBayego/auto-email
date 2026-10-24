@@ -1,5 +1,9 @@
 import type { SecretValue } from '@/config/env';
 
+// At most two structured-output attempts, each with up to five transport
+// attempts from the worker's request policy. This counts actual API requests.
+export const textGenerationAttemptLimit = 10;
+
 export type TextGenerationInput = {
   instructions: string;
   input: string;
@@ -16,12 +20,17 @@ export interface TextGenerationClient {
 }
 
 export type GmailReadResource =
-  'profile' | 'messages' | `messages/${string}` | `threads/${string}`;
+  | 'profile'
+  | 'messages'
+  | 'drafts'
+  | `messages/${string}`
+  | `threads/${string}`
+  | `drafts/${string}`;
 export type GmailQuery = Readonly<
   Record<string, string | number | boolean | readonly string[]>
 >;
 export type GmailListOptions = {
-  mailbox?: 'inbox' | 'sent' | 'all';
+  mailbox?: 'inbox' | 'sent' | 'all' | 'incoming';
   labelIds?: readonly string[];
   after?: Date;
   before?: Date;
@@ -72,8 +81,17 @@ export type GmailMessage = GmailMessageReference &
   }>;
 export interface GmailTransport {
   get(resource: GmailReadResource, query?: GmailQuery): Promise<unknown>;
-  createDraft(message: { raw: string; threadId?: string }): Promise<unknown>;
+  createDraft(
+    message: { raw: string; threadId?: string },
+    guard?: GmailDraftGuard,
+  ): Promise<unknown>;
 }
+export type GmailDraftGuard = Readonly<{
+  // Repeated before acquiring a write permit, including after quota waits.
+  prepare(): Promise<void>;
+  // Runs with the permit held, immediately before the irreversible HTTP call.
+  beforeRequest(): Promise<void>;
+}>;
 export interface GmailClient extends GmailTransport {
   listMessages(options?: GmailListOptions): Promise<GmailMessagePage>;
   getMessage(id: string, options?: GmailGetOptions): Promise<GmailMessage>;

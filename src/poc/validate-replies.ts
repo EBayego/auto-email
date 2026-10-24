@@ -5,6 +5,7 @@ import { ConversationError } from '@/modules/gmail/conversation';
 import { validateManualSelection } from '@/modules/gmail/manual-selection';
 import { ResponseGenerationError } from '@/modules/response/contracts';
 import { buildReplyMime } from '@/modules/gmail/reply-mime';
+import { sameReplyRecipients } from '@/modules/gmail/reply-recipients';
 import { parseGmailMessage } from '@/modules/gmail/parser';
 import { normalizeEmailText } from '@/modules/gmail/email-content';
 import {
@@ -119,7 +120,9 @@ function outcome(report: ReplyGenerationReport): ValidationOutcome {
       report.generation.warnings.includes('NO_REPLY_REQUIRED')
     )
       return 'NO_REPLY_REQUIRED';
-    return report.generation.status;
+    return report.generation.status === 'PARTIAL'
+      ? 'REVIEW_REQUIRED'
+      : report.generation.status;
   }
   if (report.selection.status === 'FILTERED_OUT') return 'NO_REPLY_REQUIRED';
   if (report.selection.status === 'SELECTED') throw new PocValidationError();
@@ -201,10 +204,8 @@ export async function validateReplySamples(
               raw: mime.raw,
             });
             result.mimeChecked =
-              decoded.to.length === 1 &&
-              decoded.to[0].address.toLowerCase() ===
-                context.replyTarget.to.address.toLowerCase() &&
-              decoded.cc.length === 0 &&
+              sameReplyRecipients(decoded.to, mime.to) &&
+              sameReplyRecipients(decoded.cc, mime.cc) &&
               decoded.bcc.length === 0 &&
               decoded.attachments.length === 0 &&
               (decoded.subject ?? '') === mime.subject &&

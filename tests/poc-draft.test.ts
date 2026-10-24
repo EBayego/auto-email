@@ -40,6 +40,9 @@ vi.mock('@/poc/sent-sample-store', () => ({
 vi.mock('@/worker/runtime', () => ({
   createWorkerRuntime: vi.fn(() => ({
     gmailFor: mocks.gmailFor,
+    knowledgeFor: vi.fn(async () => undefined),
+    policyFor: vi.fn(async () => undefined),
+    factualValidationFor: vi.fn(async () => ({ record: vi.fn() })),
     providers: { text: { generate: mocks.generate } },
   })),
 }));

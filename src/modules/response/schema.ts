@@ -1,9 +1,10 @@
+import { z } from 'zod';
 import {
   ResponseGenerationError,
   responseLimits,
   type GeneratedResponse,
-  type ResponseWarning,
 } from './contracts';
+import { retrievalLimits } from '@/modules/knowledge/retriever';
 
 export const modelWarnings = [
   'MISSING_INFORMATION',
@@ -16,184 +17,107 @@ export const modelWarnings = [
   'UNANSWERED_QUESTION',
   'STYLE_PREFERENCE_MISMATCH',
 ] as const;
-const missing = {
-  type: 'array',
-  maxItems: 8,
-  items: { type: 'string', minLength: 1, maxLength: 240 },
-};
-const properties = {
-  status: {
-    type: 'string',
-    enum: ['READY', 'INSUFFICIENT_CONTEXT', 'BLOCKED'],
-  },
-  bodyText: {
-    type: ['string', 'null'],
-    maxLength: responseLimits.bodyCharacters,
-  },
-  language: {
-    type: 'string',
-    pattern: '^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$',
-    maxLength: 16,
-  },
-  missingInformation: missing,
-  evidence: {
-    type: 'array',
-    maxItems: 12,
-    items: {
-      type: 'object',
-      properties: {
-        messageIndex: {
-          type: 'integer',
-          minimum: 0,
-          maximum: responseLimits.messages - 1,
-        },
-        quote: { type: 'string', minLength: 4, maxLength: 400 },
-        claim: { type: 'string', minLength: 1, maxLength: 400 },
-      },
-      required: ['messageIndex', 'quote', 'claim'],
-      additionalProperties: false,
-    },
-  },
-  warnings: {
-    type: 'array',
-    maxItems: 8,
-    items: { type: 'string', enum: modelWarnings },
-  },
-};
-export const generatedResponseSchema = {
-  type: 'object',
-  properties,
-  required: Object.keys(properties),
-  additionalProperties: false,
-};
-const verificationProperties = {
-  verdict: {
-    type: 'string',
-    enum: ['SUPPORTED', 'INSUFFICIENT_CONTEXT', 'BLOCKED'],
-  },
-  issues: {
-    type: 'array',
-    maxItems: 8,
-    items: { type: 'string', enum: modelWarnings },
-  },
-};
-export const responseVerificationSchema = {
-  type: 'object',
-  properties: verificationProperties,
-  required: Object.keys(verificationProperties),
-  additionalProperties: false,
-};
-const invalid = (): never => {
-  throw new ResponseGenerationError('INVALID_RESPONSE');
-};
+
+const safeText = (max: number, min = 1) =>
+  z
+    .string()
+    .min(min)
+    .max(max)
+    .refine(
+      (value) =>
+        value === value.trim() &&
+        value.isWellFormed() &&
+        !/[\p{Cc}\p{Cf}]/u.test(value.replace(/[\t\r\n\u200c\u200d]/gu, '')),
+    );
+const evidenceFields = { quote: safeText(400, 4), claim: safeText(400) };
+const modelWarningSchema = z
+  .array(z.enum(modelWarnings))
+  .max(8)
+  .refine((items) => new Set(items).size === items.length);
+const generatedShape = z.strictObject({
+  status: z.enum(['READY', 'PARTIAL', 'INSUFFICIENT_CONTEXT', 'BLOCKED']),
+  bodyText: safeText(responseLimits.bodyCharacters).nullable(),
+  language: z
+    .string()
+    .max(16)
+    .regex(/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/),
+  missingInformation: z.array(safeText(240)).max(8),
+  evidence: z
+    .array(
+      z.union([
+        z.strictObject({
+          messageIndex: z
+            .int()
+            .min(0)
+            .max(responseLimits.messages - 1),
+          ...evidenceFields,
+        }),
+        z.strictObject({
+          knowledgeIndex: z
+            .int()
+            .min(0)
+            .max(retrievalLimits.fragments - 1),
+          ...evidenceFields,
+        }),
+      ]),
+    )
+    .max(12),
+  warnings: modelWarningSchema,
+});
+export const generatedResponseZodSchema = generatedShape.refine((value) => {
+  if (value.status === 'READY' || value.status === 'PARTIAL') {
+    return (
+      value.bodyText !== null &&
+      !value.warnings.length &&
+      (value.status === 'READY'
+        ? !value.missingInformation.length
+        : !!value.missingInformation.length && !!value.evidence.length) &&
+      !/<\/?[a-z][^>]*>|\[(?:TODO|DATO|NOMBRE|PRECIO|FECHA|INSERT|PLACEHOLDER)[^\]]*\]/iu.test(
+        value.bodyText,
+      ) &&
+      !/^(?:to|from|cc|bcc|subject|reply-to):/im.test(value.bodyText)
+    );
+  }
+  return (
+    value.bodyText === null &&
+    !value.evidence.length &&
+    (value.status === 'BLOCKED'
+      ? !!value.warnings.length
+      : !!value.missingInformation.length)
+  );
+});
+const verificationShape = z.strictObject({
+  verdict: z.enum(['SUPPORTED', 'INSUFFICIENT_CONTEXT', 'BLOCKED']),
+  issues: modelWarningSchema,
+});
+const verificationSchema = verificationShape.refine((value) =>
+  value.verdict === 'SUPPORTED' ? !value.issues.length : !!value.issues.length,
+);
+// JSON Schema and runtime validation share their structural source. State
+// invariants are checked locally after Structured Outputs has constrained JSON.
+export const generatedResponseSchema = z.toJSONSchema(generatedShape, {
+  target: 'draft-7',
+});
+export const responseVerificationSchema = z.toJSONSchema(verificationShape, {
+  target: 'draft-7',
+});
+delete generatedResponseSchema.$schema;
+delete responseVerificationSchema.$schema;
+
 export const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
-const keys = (
-  value: unknown,
-  expected: readonly string[],
-): value is Record<string, unknown> =>
-  record(value) &&
-  Object.keys(value).length === expected.length &&
-  expected.every((key) => Object.hasOwn(value, key));
-const text = (value: unknown, max: number, min = 1): value is string =>
-  typeof value === 'string' &&
-  value === value.trim() &&
-  value.length >= min &&
-  value.length <= max &&
-  !/[\p{Cc}\p{Cf}]/u.test(value.replace(/[\t\r\n]/gu, ''));
-const warnings = (value: unknown): value is ResponseWarning[] =>
-  Array.isArray(value) &&
-  value.length <= 8 &&
-  value.every((item) => modelWarnings.includes(item)) &&
-  new Set(value).size === value.length;
-function json(input: string): unknown {
-  if (typeof input !== 'string' || Buffer.byteLength(input) > 40000)
-    return invalid();
+function parse<T>(schema: z.ZodType<T>, input: string): T {
   try {
-    return JSON.parse(input);
+    if (typeof input !== 'string' || Buffer.byteLength(input) > 40000)
+      throw new Error();
+    return schema.parse(JSON.parse(input));
   } catch {
-    return invalid();
+    throw new ResponseGenerationError('INVALID_RESPONSE');
   }
 }
-
 export function parseGeneratedResponse(input: string): GeneratedResponse {
-  const value = json(input);
-  if (
-    !keys(value, Object.keys(properties)) ||
-    !['READY', 'INSUFFICIENT_CONTEXT', 'BLOCKED'].includes(
-      String(value.status),
-    ) ||
-    typeof value.language !== 'string' ||
-    value.language.length > 16 ||
-    !/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(value.language) ||
-    !Array.isArray(value.missingInformation) ||
-    value.missingInformation.length > 8 ||
-    !value.missingInformation.every((item) => text(item, 240)) ||
-    !Array.isArray(value.evidence) ||
-    value.evidence.length > 12 ||
-    !warnings(value.warnings)
-  )
-    return invalid();
-  const evidence = value.evidence.map((entry: unknown) => {
-    if (
-      !keys(entry, ['messageIndex', 'quote', 'claim']) ||
-      !Number.isInteger(entry.messageIndex) ||
-      (entry.messageIndex as number) < 0 ||
-      (entry.messageIndex as number) >= responseLimits.messages ||
-      !text(entry.quote, 400, 4) ||
-      !text(entry.claim, 400)
-    )
-      return invalid();
-    return {
-      messageIndex: entry.messageIndex as number,
-      quote: entry.quote,
-      claim: entry.claim,
-    };
-  });
-  if (value.status === 'READY') {
-    if (
-      !text(value.bodyText, responseLimits.bodyCharacters) ||
-      value.missingInformation.length ||
-      value.warnings.length ||
-      /<\/?[a-z][^>]*>|\[(?:TODO|DATO|NOMBRE|PRECIO|FECHA|INSERT|PLACEHOLDER)[^\]]*\]/iu.test(
-        value.bodyText,
-      ) ||
-      /^(?:to|from|cc|bcc|subject|reply-to):/im.test(value.bodyText)
-    )
-      return invalid();
-  } else if (
-    value.bodyText !== null ||
-    evidence.length ||
-    (value.status === 'INSUFFICIENT_CONTEXT' &&
-      !value.missingInformation.length) ||
-    (value.status === 'BLOCKED' && !value.warnings.length)
-  )
-    return invalid();
-  return {
-    status: value.status as GeneratedResponse['status'],
-    bodyText: value.bodyText as string | null,
-    language: value.language,
-    missingInformation: [...value.missingInformation] as string[],
-    evidence,
-    warnings: [...value.warnings],
-  };
+  return parse(generatedResponseZodSchema, input);
 }
-
 export function parseResponseVerification(input: string) {
-  const value = json(input);
-  if (
-    !keys(value, Object.keys(verificationProperties)) ||
-    !['SUPPORTED', 'INSUFFICIENT_CONTEXT', 'BLOCKED'].includes(
-      String(value.verdict),
-    ) ||
-    !warnings(value.issues) ||
-    (value.verdict === 'SUPPORTED'
-      ? value.issues.length !== 0
-      : value.issues.length === 0)
-  )
-    return invalid();
-  return {
-    verdict: value.verdict as 'SUPPORTED' | 'INSUFFICIENT_CONTEXT' | 'BLOCKED',
-    issues: [...value.issues],
-  };
+  return parse(verificationSchema, input);
 }
