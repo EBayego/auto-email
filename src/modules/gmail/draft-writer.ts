@@ -160,6 +160,7 @@ export function createDraftWriter(input: {
         inputTokens: response.inputTokens,
         outputTokens: response.outputTokens,
         sourcesUsed: response.sourcesUsed,
+        warnings: response.warnings,
         policyRevision: response.policyRevision,
         knowledgeRevision: response.knowledgeRevision,
         factualValidation,

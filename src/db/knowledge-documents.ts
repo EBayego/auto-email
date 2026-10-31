@@ -99,6 +99,13 @@ export function createKnowledgeDocuments(
         const extracted = await extract(bytes, format);
         const index = buildDocumentIndex(extracted);
         const text = extracted.text;
+        const owner = await client
+          .from('users')
+          .select('status')
+          .eq('id', userId)
+          .maybeSingle();
+        if (owner.error || owner.data?.status !== 'ACTIVE')
+          throw new DocumentError('PROCESSING_FAILED');
         const result = await storage.upload(objectKey(row.id), bytes, {
           contentType: documentMimeTypes[format],
           upsert: false,

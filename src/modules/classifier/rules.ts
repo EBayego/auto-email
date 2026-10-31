@@ -81,6 +81,8 @@ const explanations: Record<ClassificationReason, string> = {
   SPAM: 'El mensaje está marcado como spam.',
   TRASH: 'El mensaje está en la papelera.',
   NOT_INCOMING: 'El mensaje pertenece al titular o es un enviado o borrador.',
+  OUTSIDE_SELECTION: 'El mensaje no está dentro de la selección configurada.',
+  CATEGORY_EXCLUDED: 'El tipo de correo está excluido por la configuración.',
   EXCLUDED_SENDER:
     'El remitente está excluido por la configuración del usuario.',
   EXCLUDED_DOMAIN:

@@ -7,6 +7,7 @@ import { encryptGmailRefreshToken } from './tokens';
 
 export const gmailOAuthLifetimeSeconds = 600;
 export const gmailOAuthCookie = 'auto-email-gmail-oauth';
+export const gmailOnboardingCookie = 'auto-email-gmail-onboarding';
 
 export type GmailOAuthStore = {
   beginAttempt(input: {

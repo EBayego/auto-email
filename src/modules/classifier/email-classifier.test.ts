@@ -43,6 +43,23 @@ function fixture(full = classifierMessage(), answer: unknown = positive) {
 }
 
 describe('MAIL-030 reglas rápidas de clasificación', () => {
+  it('MAIL-053 omite mensajes fuera de la selección antes de leer el cuerpo o llamar al modelo', async () => {
+    const message = classifierMessage({ labels: ['INBOX'] });
+    const f = fixture(message);
+    expect(
+      await f.classifier.classify({
+        messageId: message.id,
+        mailboxAddress: 'owner@example.invalid',
+        processingScope: 'UNREAD_INBOX',
+      }),
+    ).toMatchObject({
+      decision: 'NO_REPLY',
+      reasons: ['OUTSIDE_SELECTION'],
+      modelCalls: 0,
+    });
+    expect(f.getMessage).toHaveBeenCalledTimes(1);
+    expect(f.generate).not.toHaveBeenCalled();
+  });
   it('conserva el fallo operacional de OpenAI para que el worker registre el motivo definitivo', async () => {
     const f = fixture();
     const failure = new ProviderError('openai', 'RATE_LIMITED', {

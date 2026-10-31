@@ -17,7 +17,13 @@ const request = (
 ) =>
   new NextRequest(origin + path, {
     method: 'POST',
-    headers: { origin },
+    headers: {
+      origin,
+      ...(path === '/api/gmail/disconnect'
+        ? { 'content-type': 'application/x-www-form-urlencoded' }
+        : {}),
+    },
+    ...(path === '/api/gmail/disconnect' ? { body: 'confirmed=true' } : {}),
     ...options,
   });
 describe('gestión de la conexión Gmail', () => {
@@ -98,4 +104,18 @@ describe('gestión de la conexión Gmail', () => {
       (await check(request('/api/gmail/check'))).headers.get('location'),
     ).toBe(origin + '/app?gmail=UNAVAILABLE');
   });
+  it.each([
+    '',
+    'confirmed=false',
+    'confirmed=true&confirmed=true',
+    'confirmed=true&userId=other',
+  ])(
+    'MAIL-055 exige confirmación de desconexión y rechaza campos adicionales',
+    async (body) => {
+      expect(
+        (await disconnect(request('/api/gmail/disconnect', { body }))).status,
+      ).toBe(400);
+      expect(stop).not.toHaveBeenCalled();
+    },
+  );
 });

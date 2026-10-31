@@ -14,6 +14,7 @@ import { createEmailJobStore } from '@/db/email-jobs';
 import { createDraftGenerationRepository } from '@/db/draft-generations';
 import { createDraftReconciliationStore } from '@/db/draft-reconciliation';
 import { createResponsePolicyRepository } from '@/db/response-policy';
+import { createAutomationSettingsRepository } from '@/db/automation-settings';
 import { createResponseValidationRepository } from '@/db/response-validation';
 import { runEmailJobCycle, type EmailJob } from '@/worker/email-jobs';
 import { generateEmailJobDraft } from '@/worker/email-generation';
@@ -37,6 +38,9 @@ import { defaultResponsePolicySettings } from '@/modules/policy/settings';
 import { createEmailFixtures } from './fixtures/emails';
 import { readyResponse, supportedResponse } from './fixtures/responses';
 import { writingProfileFixture } from './fixtures/writing-profile';
+import { createAuthClient } from '@/modules/auth/client';
+import type { StyleEditorSnapshot } from '@/modules/identity/style-editor';
+import type { AutomationSnapshot } from '@/modules/workflow/automation-settings';
 
 const service = createClient<Database>(
   process.env.AUTO_EMAIL_TEST_URL!,
@@ -51,6 +55,7 @@ let userId = '',
   sourceId = '',
   documentId = '',
   contextualRevision = '';
+const password = `Draft48-${crypto.randomUUID()}!`;
 const fact = 'El precio de Atlas es de 125 euros.';
 const contextualDescription = 'Registro específico cercano del destinatario.';
 const sources = () => createKnowledgeSources(service, userId);
@@ -124,7 +129,9 @@ function fixture(
     ...thread,
     messages: saved ? [...thread.messages, saved.message] : thread.messages,
   }));
-  gmail.getMessage.mockImplementation(async () => {
+  gmail.getMessage.mockImplementation(async (id) => {
+    const target = thread.messages.find((message) => message.id === id);
+    if (target) return target;
     if (!saved) throw new Error('NO_DRAFT');
     return saved.message;
   });
@@ -363,7 +370,7 @@ describe('MAIL-048 worker y reconciliación con Supabase real', () => {
     email = `draft48-${crypto.randomUUID()}@example.invalid`;
     const created = await service.auth.admin.createUser({
       email,
-      password: `Draft48-${crypto.randomUUID()}!`,
+      password,
       email_confirm: true,
     });
     expect(created.error).toBeNull();
@@ -470,7 +477,12 @@ describe('MAIL-048 worker y reconciliación con Supabase real', () => {
       (
         await service
           .from('user_settings')
-          .update({ automation_enabled: true })
+          .update({
+            automation_enabled: true,
+            processing_scope: 'ALL_INCOMING',
+            classifier_excluded_addresses: [],
+            classifier_excluded_domains: [],
+          })
           .eq('user_id', userId)
       ).error,
     ).toBeNull();
@@ -547,6 +559,7 @@ describe('MAIL-048 worker y reconciliación con Supabase real', () => {
         knowledge_revision: (await sources().list()).revision,
         input_tokens: 40,
         output_tokens: 20,
+        warnings: expect.arrayContaining(['HUMAN_REVIEW_REQUIRED']),
         factual_validation: expect.objectContaining({
           status: 'SUPPORTED',
           issues: [],
@@ -657,6 +670,38 @@ describe('MAIL-048 worker y reconciliación con Supabase real', () => {
       expect(events.data).toContainEqual({
         action: 'REVIEW_REQUIRED',
         reasons: ['POLICY_CHANGED'],
+      });
+    },
+  );
+  it.each(['selection', 'exclusion'] as const)(
+    'MAIL-053 cancela un borrador si cambia %s justo antes de escribir en Gmail',
+    async (change) => {
+      const f = fixture('success', {
+        beforeWrite: async () => {
+          const repository = createAutomationSettingsRepository(
+            service,
+            userId,
+          );
+          const value = await repository.get();
+          await repository.set({
+            ...value,
+            settings: {
+              ...value.settings,
+              ...(change === 'selection'
+                ? { processingScope: 'UNREAD_INBOX' as const }
+                : { excludedDomains: ['example.invalid'] }),
+            },
+          });
+        },
+      });
+      await f.seed();
+      await runEmailJobCycle(f.deps, { leaseSeconds: 300, maxJobsPerCycle: 2 });
+      expect((await jobRow()).status).toBe('REVIEW_REQUIRED');
+      expect(f.posted).not.toHaveBeenCalled();
+      expect(await row()).toMatchObject({
+        status: 'CANCELLED',
+        write_started_at: null,
+        draft_id: null,
       });
     },
   );
@@ -837,5 +882,154 @@ describe('MAIL-048 worker y reconciliación con Supabase real', () => {
     expect((await row()).reconciliation_result).toBe('MISSING');
     expect((await jobRow()).status).toBe('REVIEW_REQUIRED');
     expect(f.gmail.createDraft).toHaveBeenCalledOnce();
+  });
+  it('EPIC-08 configura estilo, fuentes y automatización desde la web y mantiene el borrador en Gmail', async () => {
+    const origin = process.env.AUTO_EMAIL_TEST_APP_URL!;
+    const jar = new Map<string, string>();
+    const auth = createAuthClient(
+      {
+        getAll: () => [...jar].map(([name, value]) => ({ name, value })),
+        setAll: (values) => {
+          for (const { name, value } of values) {
+            if (value) jar.set(name, value);
+            else jar.delete(name);
+          }
+        },
+      },
+      {
+        appOrigin: origin,
+        supabaseUrl: process.env.AUTO_EMAIL_TEST_URL!,
+        publishableKey: process.env.AUTO_EMAIL_TEST_PUBLISHABLE_KEY!,
+        secureCookies: false,
+      },
+    );
+    expect(
+      (await auth.auth.signInWithPassword({ email, password })).error,
+    ).toBeNull();
+    const request = (path: string, method = 'GET', body?: unknown) =>
+      fetch(`${origin}${path}`, {
+        method,
+        headers: {
+          origin,
+          cookie: [...jar].map(([key, value]) => `${key}=${value}`).join('; '),
+          ...(body ? { 'content-type': 'application/json' } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    const configureSource = (enabled: boolean) =>
+      request('/api/knowledge/sources', 'POST', {
+        action: 'save_source',
+        id: sourceId,
+        title: 'Tarifas Atlas',
+        priority: 0,
+        enabled,
+      });
+    const automation = async (enabled: boolean) => {
+      const response = await request('/api/automation/settings');
+      expect(response.status).toBe(200);
+      const state: AutomationSnapshot = await response.json();
+      expect(
+        (
+          await request('/api/automation/settings', 'PUT', {
+            revision: state.revision,
+            settings: {
+              ...state.settings,
+              execution: {
+                ...state.settings.execution,
+                automationEnabled: enabled,
+              },
+            },
+          })
+        ).status,
+      ).toBe(200);
+    };
+    try {
+      // Build the worker first: subsequent HTTP changes must be loaded dynamically.
+      const f = fixture('success', { contextual: true });
+      await automation(false);
+      const response = await request('/api/style');
+      expect(response.status).toBe(200);
+      const { style }: { style: StyleEditorSnapshot } = await response.json();
+      expect(
+        (
+          await request('/api/style', 'PUT', {
+            action: 'save',
+            scope: { kind: 'GENERAL', key: '' },
+            generalRevision: style.generalRevision,
+            profileRevision: style.generalRevision,
+            expectedRevisions: style.preferences
+              .filter((row) => row.scope.kind === 'GENERAL')
+              .map((row) => row.revision),
+            preferences: [
+              { key: 'length', value: 'long' },
+              { key: 'formality', value: 'formal' },
+            ],
+          })
+        ).status,
+      ).toBe(200);
+      expect((await configureSource(false)).status).toBe(200);
+      expect(
+        (
+          await sources().plan({
+            query: 'precio Atlas',
+            intent: 'REQUEST_INFORMATION',
+          })
+        ).primarySources,
+      ).toEqual([]);
+      await f.seed();
+      await runEmailJobCycle(f.deps, { leaseSeconds: 300, maxJobsPerCycle: 2 });
+      expect((await jobRow()).status).toBe('PENDING');
+      expect(f.f.text.generate).not.toHaveBeenCalled();
+      expect(f.posted).not.toHaveBeenCalled();
+
+      expect((await configureSource(true)).status).toBe(200);
+      await automation(true);
+      expect(
+        (
+          await runEmailJobCycle(f.deps, {
+            leaseSeconds: 300,
+            maxJobsPerCycle: 2,
+          })
+        ).draftsCreated,
+      ).toBe(1);
+      expect(f.posted).toHaveBeenCalledOnce();
+      const input = JSON.parse(f.f.text.generate.mock.calls[0][0].input);
+      expect(input.stylePreferences).toEqual(
+        expect.arrayContaining([
+          { key: 'length', value: 'long' },
+          { key: 'formality', value: 'formal' },
+        ]),
+      );
+      expect(input.knowledge[0].content).toBe(fact);
+      const job = await jobRow();
+      const activity = await request(`/api/activity/${job.id}`);
+      expect(activity.status).toBe(200);
+      const detail = await activity.json();
+      expect(detail.job).toMatchObject({
+        status: 'DRAFT_CREATED',
+        draft: { status: 'CREATED' },
+      });
+      expect(detail.sources).toContainEqual(
+        expect.objectContaining({
+          kind: 'KNOWLEDGE_FRAGMENT',
+          sourceTitle: 'Tarifas Atlas',
+        }),
+      );
+      expect(JSON.stringify(detail)).not.toContain(fact);
+      const html = await (await request(`/activity/${job.id}`)).text();
+      expect(html).toContain('https://mail.google.com/mail/u/');
+      expect(html).toContain(
+        'Los borradores se revisan y envían manualmente desde Gmail.',
+      );
+      expect(html).not.toContain(fact);
+      expect(html).not.toContain('<textarea');
+      const saved = f.getSaved();
+      await automation(false);
+      await runEmailJobCycle(f.deps, { leaseSeconds: 300, maxJobsPerCycle: 2 });
+      expect(f.getSaved()).toEqual(saved);
+      expect(f.posted).toHaveBeenCalledOnce();
+    } finally {
+      await auth.auth.signOut({ scope: 'local' });
+    }
   });
 });

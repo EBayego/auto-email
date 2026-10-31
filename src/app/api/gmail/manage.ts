@@ -24,6 +24,28 @@ export async function manageGmail(
         { status: 400, headers },
       );
     let result = 'CHECKED';
+    if (operation === 'disconnect') {
+      if (
+        request.headers.get('content-type')?.split(';')[0] !==
+          'application/x-www-form-urlencoded' ||
+        Number(request.headers.get('content-length')) > 256
+      )
+        return NextResponse.json(
+          { error: 'INVALID_INPUT' },
+          { status: 400, headers },
+        );
+      const body = await request.text();
+      const form = new URLSearchParams(body);
+      if (
+        Buffer.byteLength(body) > 256 ||
+        form.get('confirmed') !== 'true' ||
+        [...form.keys()].length !== 1
+      )
+        return NextResponse.json(
+          { error: 'INVALID_INPUT' },
+          { status: 400, headers },
+        );
+    }
     try {
       const connection = await getGmailConnection();
       if (operation === 'disconnect')

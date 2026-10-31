@@ -36,9 +36,11 @@ type RoutedResult = KnowledgeRetrievalResult;
 export function KnowledgeSourcesPanel({
   documents,
   onUpdated,
+  onConfigurationChange,
 }: {
   documents: DocumentMetadata[];
   onUpdated(): Promise<void>;
+  onConfigurationChange?(configuration: SourceConfiguration): void;
 }) {
   const [configuration, setConfiguration] = useState<SourceConfiguration>({
     revision: '',
@@ -47,6 +49,7 @@ export function KnowledgeSourcesPanel({
     rules: [],
   });
   const [busy, setBusy] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [message, setMessage] = useState('');
   const [editing, setEditing] = useState<SourceRule | null>(null);
   const [result, setResult] = useState<RoutedResult | null>(null);
@@ -70,7 +73,21 @@ export function KnowledgeSourcesPanel({
       cache: 'no-store',
     });
     if (!response.ok) throw new Error();
-    setConfiguration(await response.json());
+    const value: SourceConfiguration = await response.json();
+    setConfiguration(value);
+    onConfigurationChange?.(value);
+    setLoaded(true);
+  }
+  async function retryLoad() {
+    setBusy(true);
+    try {
+      await load();
+      setMessage('');
+    } catch {
+      setMessage('No se pueden cargar las fuentes.');
+    } finally {
+      setBusy(false);
+    }
   }
   useEffect(() => {
     let active = true;
@@ -80,7 +97,11 @@ export function KnowledgeSourcesPanel({
         return response.json();
       })
       .then((value) => {
-        if (active) setConfiguration(value);
+        if (active) {
+          setConfiguration(value);
+          onConfigurationChange?.(value);
+          setLoaded(true);
+        }
       })
       .catch(() => {
         if (active) setMessage('No se pueden cargar las fuentes.');
@@ -91,7 +112,7 @@ export function KnowledgeSourcesPanel({
     return () => {
       active = false;
     };
-  }, []);
+  }, [onConfigurationChange]);
   async function mutate(operation: SourceOperation) {
     setBusy(true);
     setMessage('Guardando…');
@@ -179,6 +200,31 @@ export function KnowledgeSourcesPanel({
       setBusy(false);
     }
   }
+  if (!loaded)
+    return (
+      <section
+        className="knowledge-sources"
+        aria-labelledby="sources-title"
+        aria-busy={busy}
+      >
+        <h3 id="sources-title">Fuentes y reglas de consulta</h3>
+        <p
+          role={busy ? 'status' : 'alert'}
+          className={busy ? 'description' : 'form-error'}
+        >
+          {busy ? 'Cargando fuentes…' : message}
+        </p>
+        {!busy && (
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={() => void retryLoad()}
+          >
+            Volver a intentar
+          </button>
+        )}
+      </section>
+    );
   return (
     <section className="knowledge-sources" aria-labelledby="sources-title">
       <h3 id="sources-title">Fuentes y reglas de consulta</h3>
@@ -187,6 +233,46 @@ export function KnowledgeSourcesPanel({
         consultan por reglas. Un número de prioridad menor se consulta primero.
         Las exclusiones prevalecen cuando coinciden varias reglas.
       </p>
+      <ul className="source-overview" aria-label="Fuentes disponibles">
+        {configuration.sources.map((source) => (
+          <li key={source.id}>
+            <div>
+              <strong>{source.title}</strong>
+              <p className="description">
+                {source.enabled ? 'Acceso permitido' : 'Acceso desactivado'} ·
+                Prioridad {source.priority} ·{' '}
+                {
+                  documents.filter(
+                    (document) => document.source_id === source.id,
+                  ).length
+                }{' '}
+                documentos
+              </p>
+            </div>
+            <button
+              type="button"
+              className="button button-secondary"
+              disabled={busy}
+              aria-label={`${source.enabled ? 'Desactivar' : 'Activar'} fuente ${source.title}`}
+              onClick={() =>
+                void mutate({
+                  action: 'save_source',
+                  ...source,
+                  enabled: !source.enabled,
+                })
+              }
+            >
+              {source.enabled ? 'Desactivar acceso' : 'Activar acceso'}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {!configuration.sources.length && (
+        <p className="description">
+          Todavía no hay fuentes. Crea una, asígnale documentos y añade una
+          regla para que el asistente pueda consultarla.
+        </p>
+      )}
       {message && (
         <p role="status" aria-live="polite" className="description">
           {message}
@@ -431,36 +517,36 @@ export function KnowledgeSourcesPanel({
             />
           </label>
           {(['primary', 'fallback', 'excluded'] as const).map((role, index) => (
-            <label key={role}>
-              {
-                [
-                  'Fuentes principales',
-                  'Fuentes de respaldo',
-                  'Fuentes excluidas',
-                ][index]
-              }
-              <select
-                name={role}
-                multiple
-                size={Math.max(2, Math.min(5, configuration.sources.length))}
-                required={role === 'primary'}
-                defaultValue={
-                  editing?.[
-                    `${role === 'excluded' ? 'excluded' : role}SourceIds`
-                  ] ?? []
+            <fieldset key={role} className="settings-checks" disabled={busy}>
+              <legend>
+                {
+                  [
+                    'Fuentes principales',
+                    'Fuentes de respaldo',
+                    'Fuentes excluidas',
+                  ][index]
                 }
-              >
-                {configuration.sources.map((source) => (
-                  <option key={source.id} value={source.id}>
-                    {source.title}
-                    {!source.enabled ? ' (desactivada)' : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
+              </legend>
+              {configuration.sources.map((source) => (
+                <label key={source.id}>
+                  <input
+                    type="checkbox"
+                    name={role}
+                    value={source.id}
+                    defaultChecked={
+                      editing?.[
+                        `${role === 'excluded' ? 'excluded' : role}SourceIds`
+                      ].includes(source.id) ?? false
+                    }
+                  />
+                  {source.title}
+                  {!source.enabled ? ' (desactivada)' : ''}
+                </label>
+              ))}
+            </fieldset>
           ))}
           <p className="description">
-            Selecciona varias fuentes con Ctrl o Cmd. El respaldo se consulta si
+            Selecciona al menos una fuente principal. El respaldo se consulta si
             la búsqueda principal no aporta evidencia suficiente.
           </p>
           <label>

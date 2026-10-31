@@ -16,6 +16,7 @@ import { createDraftWriter } from '@/modules/gmail/draft-writer';
 import { EmailJobError } from '@/modules/workflow/email-job';
 import { openWorkerDataAccess } from './data-access';
 import type { EmailJob, GenerationOutcome } from './email-jobs';
+import { inspectAutomationSelection } from './automation-selection';
 
 export function createEmailJobDraftWriter(input: {
   client: DataClient;
@@ -51,6 +52,15 @@ export function createEmailJobDraftWriter(input: {
       )
         throw new EmailJobError('INVALID_INPUT');
       const snapshot = await policyRepository.get();
+      const selection = await inspectAutomationSelection({
+        client: input.client,
+        work: job,
+        gmail: input.gmail,
+        messageId: job.targetMessageId,
+        classification: job.classification,
+      });
+      if (selection.reason)
+        return { status: 'SKIPPED', reasonCode: selection.reason };
       const access = policyRepository.forAccount(job.gmailAccountId);
       const engine = createResponsePolicyEngine(snapshot.settings);
       const before = engine.preflight(
@@ -132,6 +142,15 @@ export function createEmailJobDraftWriter(input: {
         ),
         async assertCanWrite() {
           await input.assertLease();
+          const current = await inspectAutomationSelection({
+            client: input.client,
+            work: job,
+            gmail: input.gmail,
+            messageId: job.targetMessageId,
+            classification: job.classification,
+          });
+          if (current.reason || current.revision !== selection.revision)
+            throw new DraftPreconditionError('PREWRITE_FAILED');
           const latest = await policyRepository.get();
           if (latest.revision !== snapshot.revision) {
             await access.record(

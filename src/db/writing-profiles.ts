@@ -54,7 +54,7 @@ function validSources(
     new Set(value).size === value.length
   );
 }
-const parsed = (row: Tables<'style_profiles'>) => {
+export const parseWritingProfileRow = (row: Tables<'style_profiles'>) => {
   const profile = validateWritingProfile(row.profile);
   const scope = normalizeStyleScope({
     kind: row.scope_kind,
@@ -109,7 +109,7 @@ export function createWritingProfileRepository(
         row.scope_key !== scope.key)
     )
       throw new DataAccessError('UNAVAILABLE');
-    return row ? parsed(row) : null;
+    return row ? parseWritingProfileRow(row) : null;
   };
   return Object.freeze({
     async get() {

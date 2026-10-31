@@ -20,6 +20,7 @@ import {
 import { classificationJsonSchema, parseModelClassification } from './schema';
 import { classifierInstructions, classifierPromptVersion } from './prompts';
 import { hasPromptInjection } from '@/modules/security/prompt-injection';
+import { matchesProcessingScope } from '@/modules/workflow/processing-selection';
 
 export type {
   EmailClassifier,
@@ -53,6 +54,13 @@ export function createEmailClassifier({
           exclusions,
         );
         if (inspected.result) return inspected.result;
+        if (
+          !matchesProcessingScope(
+            metadata,
+            input.processingScope ?? 'ALL_INCOMING',
+          )
+        )
+          return classificationResult('NO_REPLY', ['OUTSIDE_SELECTION']);
         const full = await gmail.getMessage(input.messageId, {
           format: 'full',
         });
@@ -60,6 +68,10 @@ export function createEmailClassifier({
           return classificationResult('UNCERTAIN', ['MESSAGE_CHANGED']);
         const current = inspectClassifierMetadata(full, mailbox, exclusions);
         if (current.result) return current.result;
+        if (
+          !matchesProcessingScope(full, input.processingScope ?? 'ALL_INCOMING')
+        )
+          return classificationResult('NO_REPLY', ['OUTSIDE_SELECTION']);
         const email = await parseGmailMessage(full);
         if (
           email.bodyStatus === 'incomplete' ||

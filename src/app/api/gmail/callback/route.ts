@@ -3,7 +3,7 @@ import { getAuthConfig } from '@/modules/auth/config';
 import { getGmailOAuthService } from '@/app/_lib/gmail-oauth';
 import { DataAccessError } from '@/db/errors';
 import { GmailOAuthError } from '@/modules/gmail/errors';
-import { gmailOAuthCookie } from '@/modules/gmail/oauth';
+import { gmailOAuthCookie, gmailOnboardingCookie } from '@/modules/gmail/oauth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,7 +35,9 @@ export async function GET(request: NextRequest) {
     }
     const response = NextResponse.redirect(
       new URL(
-        requiresLogin ? '/login?error=gmail_session' : `/app?gmail=${result}`,
+        requiresLogin
+          ? '/login?error=gmail_session'
+          : `${request.cookies.get(gmailOnboardingCookie)?.value === '1' ? '/onboarding' : '/app'}?gmail=${result}`,
         config.appOrigin,
       ),
       303,
@@ -43,6 +45,13 @@ export async function GET(request: NextRequest) {
     for (const [name, value] of Object.entries(headers))
       response.headers.set(name, value);
     response.cookies.set(gmailOAuthCookie, '', {
+      httpOnly: true,
+      secure: config.secureCookies,
+      sameSite: 'lax',
+      path: '/api/gmail',
+      maxAge: 0,
+    });
+    response.cookies.set(gmailOnboardingCookie, '', {
       httpOnly: true,
       secure: config.secureCookies,
       sameSite: 'lax',

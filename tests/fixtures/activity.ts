@@ -1,0 +1,85 @@
+import type {
+  ActivityJob,
+  ActivityFeed,
+  ActivityDetail,
+} from '@/modules/workflow/activity';
+export const activityJobFixture = (
+  overrides: Partial<ActivityJob> = {},
+): ActivityJob => ({
+  id: '00000000-0000-4000-8000-000000000054',
+  threadId: '18b7a010cd',
+  status: 'SKIPPED',
+  reason: 'EXCLUDED_SENDER',
+  category: 'REQUEST_INFORMATION',
+  classificationReasons: ['EXPLICIT_QUESTION'],
+  risks: [],
+  attempts: 1,
+  createdAt: '2026-10-31T10:00:00Z',
+  updatedAt: '2026-10-31T10:00:05Z',
+  startedAt: '2026-10-31T10:00:01Z',
+  finishedAt: '2026-10-31T10:00:05Z',
+  draftId: null,
+  draft: null,
+  ...overrides,
+});
+export const activityFeedFixture = (): ActivityFeed => ({
+  overview: {
+    accountEmail: 'owner@example.invalid',
+    accountStatus: 'CONNECTED',
+    automationEnabled: true,
+    pollSeconds: 300,
+    dailyLimit: 30,
+    lastSyncAt: '2026-10-31T10:00:00Z',
+    manualUntil: null,
+    manualActive: false,
+  },
+  counts: {
+    PENDING: 0,
+    CLASSIFYING: 0,
+    GENERATING: 0,
+    DRAFT_CREATED: 0,
+    SKIPPED: 1,
+    REVIEW_REQUIRED: 0,
+    FAILED: 0,
+  },
+  runs: [
+    {
+      id: crypto.randomUUID(),
+      trigger: 'MANUAL',
+      status: 'FAILED',
+      startedAt: '2026-10-31T10:00:00Z',
+      finishedAt: '2026-10-31T10:00:05Z',
+      detected: 1,
+      processed: 0,
+      drafts: 0,
+      errors: 1,
+      error: 'SYNC_GOOGLE_TIMEOUT_ATTEMPTS',
+    },
+  ],
+  jobs: [activityJobFixture()],
+  nextCursor: null,
+});
+export const activityDetailFixture = (): ActivityDetail => ({
+  job: activityJobFixture(),
+  events: [
+    { at: '2026-10-31T10:00:00Z', from: null, to: 'PENDING', reason: null },
+    {
+      at: '2026-10-31T10:00:01Z',
+      from: 'PENDING',
+      to: 'CLASSIFYING',
+      reason: null,
+    },
+    {
+      at: '2026-10-31T10:00:05Z',
+      from: 'CLASSIFYING',
+      to: 'SKIPPED',
+      reason: 'EXCLUDED_SENDER',
+    },
+  ],
+  eventsTruncated: false,
+  policies: [],
+  policiesTruncated: false,
+  validations: [],
+  validationsTruncated: false,
+  sources: [],
+});

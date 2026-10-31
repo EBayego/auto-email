@@ -6,6 +6,7 @@ import { GmailOAuthError } from '@/modules/gmail/errors';
 import {
   gmailOAuthCookie,
   gmailOAuthLifetimeSeconds,
+  gmailOnboardingCookie,
 } from '@/modules/gmail/oauth';
 
 export const runtime = 'nodejs';
@@ -38,11 +39,28 @@ export async function GET(request: NextRequest) {
       path: '/api/gmail',
       maxAge: gmailOAuthLifetimeSeconds,
     });
+    response.cookies.set(
+      gmailOnboardingCookie,
+      request.nextUrl.searchParams.get('onboarding') === '1' ? '1' : '',
+      {
+        httpOnly: true,
+        secure: config.secureCookies,
+        sameSite: 'lax',
+        path: '/api/gmail',
+        maxAge:
+          request.nextUrl.searchParams.get('onboarding') === '1'
+            ? gmailOAuthLifetimeSeconds
+            : 0,
+      },
+    );
     return response;
   } catch (error) {
     if (error instanceof GmailOAuthError) {
       const response = NextResponse.redirect(
-        new URL(`/app?gmail=${error.code}`, getAuthConfig().appOrigin),
+        new URL(
+          `${request.nextUrl.searchParams.get('onboarding') === '1' ? '/onboarding' : '/app'}?gmail=${error.code}`,
+          getAuthConfig().appOrigin,
+        ),
         303,
       );
       for (const [name, value] of Object.entries(headers))
@@ -52,6 +70,15 @@ export async function GET(request: NextRequest) {
     const code = error instanceof DataAccessError ? error.code : 'UNAVAILABLE';
     const status =
       code === 'UNAUTHENTICATED' ? 401 : code === 'FORBIDDEN' ? 403 : 503;
+    if (
+      request.nextUrl.searchParams.get('onboarding') === '1' &&
+      status === 503
+    ) {
+      return NextResponse.redirect(
+        new URL('/onboarding?gmail=UNAVAILABLE', getAuthConfig().appOrigin),
+        { status: 303, headers },
+      );
+    }
     return NextResponse.json({ error: code }, { status, headers });
   }
 }

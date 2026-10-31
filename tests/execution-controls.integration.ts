@@ -228,7 +228,7 @@ describe('MAIL-035 controles HTTP y worker con PostgreSQL real', () => {
       ).toBeNull();
     }
   });
-  it('edita ajustes desde la sesión propia y muestra los controles en /app', async () => {
+  it('edita ajustes desde la sesión propia y muestra los controles en /settings', async () => {
     expect(
       (
         await post(
@@ -245,14 +245,14 @@ describe('MAIL-035 controles HTTP y worker con PostgreSQL real', () => {
       automation_enabled: false,
       max_daily_drafts: 30,
     });
-    const response = await fetch(`${origin}/app`, {
+    const response = await fetch(`${origin}/settings`, {
       headers: { cookie: cookies() },
     });
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain('Revisar correos ahora');
     expect(html).toContain('Pausar cuenta Gmail');
-    expect(html).toContain('Guardar ajustes');
+    expect(html).toContain('Guardar configuración');
     expect(html).not.toContain('encrypted_refresh_token');
   });
   it('procesa una revisión manual con automatización desactivada sin duplicar al reactivar', async () => {

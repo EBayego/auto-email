@@ -12,6 +12,8 @@ import { DraftPreconditionError } from '@/modules/gmail/draft-contracts';
 import { replySourcesSchema } from '@/modules/response/sources';
 import { factualAuditSchema } from '@/modules/response/factual-validation';
 import { draftIntentSchema } from '@/modules/gmail/draft-intent';
+import { z } from 'zod';
+import { responseWarnings } from '@/modules/response/contracts';
 
 const columns =
   'id,user_id,gmail_account_id,thread_id,target_message_id,status,draft_id,draft_message_id,verified_at';
@@ -121,6 +123,11 @@ export function createDraftGenerationRepository(
     find,
     async reserve(input: DraftReservation) {
       const sources = replySourcesSchema.safeParse(input.sourcesUsed ?? []);
+      const warnings = z
+        .array(z.enum(responseWarnings))
+        .max(responseWarnings.length)
+        .refine((items) => new Set(items).size === items.length)
+        .safeParse(input.warnings ?? []);
       const intent = draftIntentSchema.optional().safeParse(input.intent);
       const factual = factualAuditSchema
         .optional()
@@ -129,6 +136,7 @@ export function createDraftGenerationRepository(
       requireUuid(input.styleRevision);
       if (
         !sources.success ||
+        !warnings.success ||
         !intent.success ||
         !factual.success ||
         factual.data?.status === 'REVIEW_REQUIRED' ||
@@ -162,6 +170,7 @@ export function createDraftGenerationRepository(
           input_tokens: input.inputTokens,
           output_tokens: input.outputTokens,
           sources_used: sources.data,
+          warnings: warnings.data,
           policy_revision: input.policyRevision,
           knowledge_revision: input.knowledgeRevision,
           factual_validation: factual.data,

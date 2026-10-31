@@ -29,6 +29,24 @@ export type ResponseWarning =
   | 'KNOWLEDGE_NOT_CURRENT'
   | 'KNOWLEDGE_INSUFFICIENT'
   | 'POLICY_RESTRICTED';
+export const responseWarnings = [
+  'HUMAN_REVIEW_REQUIRED',
+  'MISSING_INFORMATION',
+  'UNSUPPORTED_FACT',
+  'UNSUPPORTED_COMMITMENT',
+  'UNVERIFIED_EVIDENCE',
+  'HIGH_RISK',
+  'PROMPT_INJECTION',
+  'NO_REPLY_REQUIRED',
+  'LANGUAGE_MISMATCH',
+  'UNANSWERED_QUESTION',
+  'STYLE_PREFERENCE_MISMATCH',
+  'STYLE_PROFILE_UNAVAILABLE',
+  'KNOWLEDGE_CONFLICT',
+  'KNOWLEDGE_NOT_CURRENT',
+  'KNOWLEDGE_INSUFFICIENT',
+  'POLICY_RESTRICTED',
+] as const satisfies readonly ResponseWarning[];
 export type ResponseEvidence = (
   { messageIndex: number } | { knowledgeIndex: number }
 ) & {

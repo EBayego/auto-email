@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { getGmailOAuthService } from '@/app/_lib/gmail-oauth';
 import { DataAccessError } from '@/db/errors';
 import { GmailOAuthError } from '@/modules/gmail/errors';
-import { gmailOAuthCookie } from '@/modules/gmail/oauth';
+import { gmailOAuthCookie, gmailOnboardingCookie } from '@/modules/gmail/oauth';
 import { GET as connect } from './connect/route';
 import { GET as callback } from './callback/route';
 
@@ -19,6 +19,49 @@ const complete = vi.fn<
 const origin = 'https://app.example.com';
 
 describe('endpoints OAuth Gmail', () => {
+  it('conserva el retorno fijo al onboarding sin aceptar URLs arbitrarias', async () => {
+    const response = await connect(
+      new NextRequest(
+        `${origin}/api/gmail/connect?onboarding=1&next=https://evil.invalid`,
+      ),
+    );
+    expect(response.cookies.get(gmailOnboardingCookie)).toMatchObject({
+      value: '1',
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 600,
+    });
+    const completed = await callback(
+      new NextRequest(
+        `${origin}/api/gmail/callback?state=${state}&code=secret`,
+        {
+          headers: {
+            cookie: `${gmailOAuthCookie}=${state}; ${gmailOnboardingCookie}=1`,
+          },
+        },
+      ),
+    );
+    expect(completed.headers.get('location')).toBe(
+      `${origin}/onboarding?gmail=CONNECTED`,
+    );
+    expect(completed.cookies.get(gmailOnboardingCookie)?.maxAge).toBe(0);
+  });
+  it('vuelve al onboarding cuando Google rechaza permisos', async () => {
+    complete.mockRejectedValue(new GmailOAuthError('MISSING_SCOPES'));
+    const response = await callback(
+      new NextRequest(
+        `${origin}/api/gmail/callback?state=${state}&error=access_denied`,
+        {
+          headers: {
+            cookie: `${gmailOAuthCookie}=${state}; ${gmailOnboardingCookie}=1`,
+          },
+        },
+      ),
+    );
+    expect(response.headers.get('location')).toBe(
+      `${origin}/onboarding?gmail=MISSING_SCOPES`,
+    );
+  });
   beforeEach(() => {
     vi.resetAllMocks();
     vi.stubEnv('APP_URL', origin);

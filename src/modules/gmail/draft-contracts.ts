@@ -26,6 +26,7 @@ export type DraftReservation = {
   inputTokens: number;
   outputTokens: number;
   sourcesUsed?: ReplySource[];
+  warnings?: import('@/modules/response/contracts').ResponseWarning[];
   policyRevision?: string;
   knowledgeRevision?: string;
   factualValidation?: import('@/modules/response/factual-validation').FactualAudit;

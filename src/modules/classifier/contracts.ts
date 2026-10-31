@@ -47,6 +47,8 @@ export type ClassificationReason =
   | 'SPAM'
   | 'TRASH'
   | 'NOT_INCOMING'
+  | 'OUTSIDE_SELECTION'
+  | 'CATEGORY_EXCLUDED'
   | 'EXCLUDED_SENDER'
   | 'EXCLUDED_DOMAIN'
   | 'NEWSLETTER'
@@ -87,6 +89,7 @@ export type ClassifyEmailInput = Readonly<{
   messageId: string;
   mailboxAddress: string;
   exclusions?: ClassifierExclusions;
+  processingScope?: import('@/modules/workflow/processing-selection').ProcessingScope;
 }>;
 export interface EmailClassifier {
   classify(input: ClassifyEmailInput): Promise<EmailClassification>;

@@ -9,6 +9,93 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      account_data_events: {
+        Row: {
+          action: string;
+          created_at: string;
+          id: string;
+          user_id: string | null;
+        };
+        ComputedFields: never;
+        Insert: {
+          action: string;
+          created_at?: string;
+          id?: string;
+          user_id?: string | null;
+        };
+        Update: {
+          action?: string;
+          created_at?: string;
+          id?: string;
+          user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'account_data_events_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      account_deletion_requests: {
+        Row: {
+          attempts: number;
+          completed_at: string | null;
+          error_code: string | null;
+          id: string;
+          lease_expires_at: string | null;
+          lease_id: string | null;
+          next_attempt_at: string;
+          phase: string;
+          receipt_hash: string;
+          requested_at: string;
+          revocation: string;
+          status: string;
+          user_id: string | null;
+        };
+        ComputedFields: never;
+        Insert: {
+          attempts?: number;
+          completed_at?: string | null;
+          error_code?: string | null;
+          id?: string;
+          lease_expires_at?: string | null;
+          lease_id?: string | null;
+          next_attempt_at?: string;
+          phase?: string;
+          receipt_hash: string;
+          requested_at?: string;
+          revocation?: string;
+          status?: string;
+          user_id?: string | null;
+        };
+        Update: {
+          attempts?: number;
+          completed_at?: string | null;
+          error_code?: string | null;
+          id?: string;
+          lease_expires_at?: string | null;
+          lease_id?: string | null;
+          next_attempt_at?: string;
+          phase?: string;
+          receipt_hash?: string;
+          requested_at?: string;
+          revocation?: string;
+          status?: string;
+          user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'account_deletion_requests_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: true;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       draft_generations: {
         Row: {
           created_at: string;
@@ -39,6 +126,7 @@ export type Database = {
           updated_at: string;
           user_id: string;
           verified_at: string | null;
+          warnings: string[];
           write_started_at: string | null;
         };
         ComputedFields: never;
@@ -71,6 +159,7 @@ export type Database = {
           updated_at?: string;
           user_id: string;
           verified_at?: string | null;
+          warnings?: string[];
           write_started_at?: string | null;
         };
         Update: {
@@ -102,6 +191,7 @@ export type Database = {
           updated_at?: string;
           user_id?: string;
           verified_at?: string | null;
+          warnings?: string[];
           write_started_at?: string | null;
         };
         Relationships: [
@@ -358,6 +448,79 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: 'gmail_oauth_attempts_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: true;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      gmail_onboarding: {
+        Row: {
+          consent_revision: string;
+          consent_version: string;
+          consented_at: string;
+          error_code: string | null;
+          finished_at: string | null;
+          gmail_account_id: string | null;
+          lease_expires_at: string | null;
+          lease_id: string | null;
+          profile_revision: string | null;
+          scanned: number;
+          scope: NonNullable<Json>;
+          selected: number;
+          started_at: string | null;
+          status: string;
+          updated_at: string;
+          user_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          consent_revision?: string;
+          consent_version: string;
+          consented_at?: string;
+          error_code?: string | null;
+          finished_at?: string | null;
+          gmail_account_id?: string | null;
+          lease_expires_at?: string | null;
+          lease_id?: string | null;
+          profile_revision?: string | null;
+          scanned?: number;
+          scope: NonNullable<Json>;
+          selected?: number;
+          started_at?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          consent_revision?: string;
+          consent_version?: string;
+          consented_at?: string;
+          error_code?: string | null;
+          finished_at?: string | null;
+          gmail_account_id?: string | null;
+          lease_expires_at?: string | null;
+          lease_id?: string | null;
+          profile_revision?: string | null;
+          scanned?: number;
+          scope?: NonNullable<Json>;
+          selected?: number;
+          started_at?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'gmail_onboarding_gmail_account_id_user_id_fkey';
+            columns: ['gmail_account_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'gmail_accounts';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'gmail_onboarding_user_id_fkey';
             columns: ['user_id'];
             isOneToOne: true;
             referencedRelation: 'users';
@@ -1093,6 +1256,7 @@ export type Database = {
           created_at: string;
           max_daily_drafts: number;
           poll_interval_seconds: number;
+          processing_scope: string;
           response_policy: NonNullable<Json>;
           updated_at: string;
           user_id: string;
@@ -1106,6 +1270,7 @@ export type Database = {
           created_at?: string;
           max_daily_drafts?: number;
           poll_interval_seconds?: number;
+          processing_scope?: string;
           response_policy?: NonNullable<Json>;
           updated_at?: string;
           user_id: string;
@@ -1118,6 +1283,7 @@ export type Database = {
           created_at?: string;
           max_daily_drafts?: number;
           poll_interval_seconds?: number;
+          processing_scope?: string;
           response_policy?: NonNullable<Json>;
           updated_at?: string;
           user_id?: string;
@@ -1175,6 +1341,20 @@ export type Database = {
           retry_after_ms: number;
         }[];
       };
+      activity_job_summary: {
+        Args: { p_job_id: string; p_user_id: string };
+        Returns: Json;
+      };
+      advance_account_deletion: {
+        Args: {
+          p_error?: string;
+          p_lease_id: string;
+          p_phase: string;
+          p_request_id: string;
+          p_revocation: string;
+        };
+        Returns: boolean;
+      };
       advance_email_job: {
         Args: {
           p_account_id: string;
@@ -1217,6 +1397,16 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      advance_onboarding_analysis: {
+        Args: {
+          p_lease_id: string;
+          p_phase: string;
+          p_scanned: number;
+          p_selected: number;
+          p_user_id: string;
+        };
+        Returns: boolean;
+      };
       assign_document_source: {
         Args: {
           p_document_id: string;
@@ -1240,6 +1430,30 @@ export type Database = {
       begin_source_document_deletion: {
         Args: { p_document_id: string; p_user_id: string };
         Returns: boolean;
+      };
+      claim_account_deletion: {
+        Args: { p_request_id?: string };
+        Returns: {
+          attempts: number;
+          completed_at: string | null;
+          error_code: string | null;
+          id: string;
+          lease_expires_at: string | null;
+          lease_id: string | null;
+          next_attempt_at: string;
+          phase: string;
+          receipt_hash: string;
+          requested_at: string;
+          revocation: string;
+          status: string;
+          user_id: string | null;
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'account_deletion_requests';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
       };
       claim_draft_reconciliation: {
         Args: { p_lease_seconds?: number; p_limit?: number };
@@ -1272,6 +1486,7 @@ export type Database = {
           updated_at: string;
           user_id: string;
           verified_at: string | null;
+          warnings: string[];
           write_started_at: string | null;
         }[];
         SetofOptions: {
@@ -1327,6 +1542,33 @@ export type Database = {
           window_start_at: string;
         }[];
       };
+      claim_onboarding_analysis: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          consent_revision: string;
+          consent_version: string;
+          consented_at: string;
+          error_code: string | null;
+          finished_at: string | null;
+          gmail_account_id: string | null;
+          lease_expires_at: string | null;
+          lease_id: string | null;
+          profile_revision: string | null;
+          scanned: number;
+          scope: NonNullable<Json>;
+          selected: number;
+          started_at: string | null;
+          status: string;
+          updated_at: string;
+          user_id: string;
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'gmail_onboarding';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
       complete_indexed_source_document: {
         Args: {
           p_document_id: string;
@@ -1338,6 +1580,10 @@ export type Database = {
       };
       complete_source_document: {
         Args: { p_document_id: string; p_text: string; p_user_id: string };
+        Returns: boolean;
+      };
+      control_onboarding_analysis: {
+        Args: { p_action: string; p_revision: string; p_user_id: string };
         Returns: boolean;
       };
       cooldown_provider_requests: {
@@ -1352,6 +1598,25 @@ export type Database = {
       daily_draft_usage: { Args: { p_user_id: string }; Returns: number };
       delete_knowledge_source_item: {
         Args: { p_id: string; p_kind: string; p_user_id: string };
+        Returns: boolean;
+      };
+      delete_writing_identity: {
+        Args: { p_user_id: string };
+        Returns: boolean;
+      };
+      edit_writing_style: {
+        Args: {
+          p_account_id: string;
+          p_action?: string;
+          p_expected_revisions?: string[];
+          p_general_revision: string;
+          p_preferences?: Json;
+          p_profile_revision?: string;
+          p_reviewed?: boolean;
+          p_scope_key: string;
+          p_scope_kind: string;
+          p_user_id: string;
+        };
         Returns: boolean;
       };
       email_job_intervention_reason: {
@@ -1384,6 +1649,33 @@ export type Database = {
         };
         Returns: boolean;
       };
+      finish_onboarding_analysis: {
+        Args: {
+          p_error?: string;
+          p_generation?: Json;
+          p_lease_id: string;
+          p_user_id: string;
+        };
+        Returns: boolean;
+      };
+      get_activity_detail: {
+        Args: { p_job_id: string; p_user_id: string };
+        Returns: Json;
+      };
+      get_activity_feed: {
+        Args: {
+          p_before?: string;
+          p_before_id?: string;
+          p_limit?: number;
+          p_status?: string;
+          p_user_id: string;
+        };
+        Returns: Json;
+      };
+      get_automation_configuration: {
+        Args: { p_user_id: string };
+        Returns: Json;
+      };
       get_knowledge_source_configuration: {
         Args: { p_user_id: string };
         Returns: Json;
@@ -1391,6 +1683,14 @@ export type Database = {
       get_response_policy: { Args: { p_user_id: string }; Returns: Json };
       gmail_execution_allowed: {
         Args: { p_account_id: string; p_user_id: string };
+        Returns: boolean;
+      };
+      purge_account_audit: {
+        Args: Record<PropertyKey, never>;
+        Returns: undefined;
+      };
+      purge_account_data: {
+        Args: { p_lease_id: string; p_request_id: string };
         Returns: boolean;
       };
       record_gmail_sync_page: {
@@ -1436,6 +1736,10 @@ export type Database = {
           p_version: number;
         };
         Returns: boolean;
+      };
+      request_account_deletion: {
+        Args: { p_receipt_hash: string; p_user_id: string };
+        Returns: string;
       };
       request_manual_processing: {
         Args: { p_account_id: string; p_user_id: string };
@@ -1508,6 +1812,15 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
+      };
+      save_onboarding_consent: {
+        Args: {
+          p_consented: boolean;
+          p_scope: Json;
+          p_user_id: string;
+          p_version: string;
+        };
+        Returns: boolean;
       };
       save_source_rule: {
         Args: {
@@ -1649,6 +1962,10 @@ export type Database = {
           version: number;
         }[];
       };
+      set_automation_configuration: {
+        Args: { p_revision: string; p_settings: Json; p_user_id: string };
+        Returns: Json;
+      };
       set_automation_settings: {
         Args: {
           p_daily_limit: number;
@@ -1688,6 +2005,10 @@ export type Database = {
         Args: { p_settings: Json; p_user_id: string };
         Returns: boolean;
       };
+      stop_account_work: {
+        Args: { p_reason: string; p_user_id: string };
+        Returns: undefined;
+      };
       valid_classifier_exclusions: {
         Args: { p_addresses: string[]; p_domains: string[] };
         Returns: boolean;
@@ -1697,6 +2018,7 @@ export type Database = {
         Returns: boolean;
       };
       valid_factual_validation: { Args: { p_value: Json }; Returns: boolean };
+      valid_onboarding_scope: { Args: { value: Json }; Returns: boolean };
       valid_reply_sources: { Args: { p_sources: Json }; Returns: boolean };
       valid_response_policy: { Args: { p_settings: Json }; Returns: boolean };
       valid_response_policy_evaluation: {

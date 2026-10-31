@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import type { DocumentMetadata } from '@/modules/knowledge/documents';
 import type { KnowledgeSearchMatch } from '@/modules/knowledge/document-index';
 import { KnowledgeSourcesPanel } from './knowledge-sources-panel';
+import type { SourceConfiguration } from '@/modules/source-router/sources';
 
 const messages: Record<string, string> = {
   INVALID_FILE: 'Selecciona un archivo válido.',
@@ -28,18 +29,34 @@ const statuses: Record<string, string> = {
   DELETING: 'Eliminación pendiente',
 };
 
-export function DocumentsPanel() {
+export function DocumentsPanel({
+  onConfigurationChange,
+}: { onConfigurationChange?(configuration: SourceConfiguration): void } = {}) {
   const [documents, setDocuments] = useState<DocumentMetadata[]>([]);
   const [busy, setBusy] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [message, setMessage] = useState('');
   const [matches, setMatches] = useState<KnowledgeSearchMatch[]>([]);
   const [searched, setSearched] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
   async function refresh() {
     const response = await fetch('/api/knowledge/documents', {
       cache: 'no-store',
     });
     if (!response.ok) throw new Error('UNAVAILABLE');
     setDocuments((await response.json()).documents);
+    setLoaded(true);
+  }
+  async function retryLoad() {
+    setBusy(true);
+    try {
+      await refresh();
+      setMessage('');
+    } catch {
+      setMessage('No se pueden cargar tus documentos.');
+    } finally {
+      setBusy(false);
+    }
   }
   async function setValidity(event: FormEvent<HTMLFormElement>, id: string) {
     event.preventDefault();
@@ -74,7 +91,10 @@ export function DocumentsPanel() {
         return response.json();
       })
       .then((body) => {
-        if (active) setDocuments(body.documents);
+        if (active) {
+          setDocuments(body.documents);
+          setLoaded(true);
+        }
       })
       .catch(() => {
         if (active) setMessage('No se pueden cargar tus documentos.');
@@ -123,6 +143,7 @@ export function DocumentsPanel() {
       });
       if (!response.ok) throw new Error((await response.json()).error);
       setMessage('Documento y texto extraído eliminados.');
+      setDeleting(null);
     } catch (error) {
       setMessage(
         messages[(error as Error).message] ??
@@ -180,6 +201,31 @@ export function DocumentsPanel() {
       setBusy(false);
     }
   }
+  if (!loaded)
+    return (
+      <section
+        aria-labelledby="documents-title"
+        className="documents-panel"
+        aria-busy={busy}
+      >
+        <h2 id="documents-title">Documentos de conocimiento</h2>
+        <p
+          role={busy ? 'status' : 'alert'}
+          className={busy ? 'description' : 'form-error'}
+        >
+          {busy ? 'Cargando documentos…' : message}
+        </p>
+        {!busy && (
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={() => void retryLoad()}
+          >
+            Volver a intentar
+          </button>
+        )}
+      </section>
+    );
   return (
     <section aria-labelledby="documents-title" className="documents-panel">
       <h2 id="documents-title">Documentos de conocimiento</h2>
@@ -288,20 +334,50 @@ export function DocumentsPanel() {
               type="button"
               className="button button-secondary"
               disabled={busy}
-              onClick={() => void remove(document.id)}
+              onClick={() => setDeleting(document.id)}
             >
               {' '}
               {document.status === 'DELETING'
                 ? 'Reintentar eliminación'
                 : 'Eliminar documento'}
             </button>
+            {deleting === document.id && (
+              <div className="form-message">
+                <p>
+                  Se eliminarán «{document.name}», su archivo y el texto
+                  extraído. Esta acción no se puede deshacer.
+                </p>
+                <div className="workspace-actions">
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={busy}
+                    onClick={() => void remove(document.id)}
+                  >
+                    Sí, eliminar documento
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    disabled={busy}
+                    onClick={() => setDeleting(null)}
+                  >
+                    Cancelar eliminación
+                  </button>
+                </div>
+              </div>
+            )}
           </li>
         ))}
       </ul>
       {!busy && documents.length === 0 && (
         <p className="description">Todavía no has incorporado documentos.</p>
       )}
-      <KnowledgeSourcesPanel documents={documents} onUpdated={refresh} />
+      <KnowledgeSourcesPanel
+        documents={documents}
+        onUpdated={refresh}
+        onConfigurationChange={onConfigurationChange}
+      />
       <form
         onSubmit={search}
         className="execution-form"

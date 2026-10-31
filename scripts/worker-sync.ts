@@ -13,6 +13,7 @@ import {
 import { runMailWorkerCycle } from '../src/worker/pipeline';
 import type { JobEvent } from '../src/worker/email-jobs';
 import type { ProviderRequestEvent } from '../src/providers/request-policy';
+import type { OnboardingEvent } from '../src/worker/onboarding';
 
 export const usage = `MAIL-029 — Sincronización periódica de Gmail.
 Uso: npm run worker:sync -- [--once] [--help]
@@ -62,8 +63,9 @@ export async function main(args = process.argv.slice(2)) {
   const config = getServerConfig();
   const syncConfig = readSyncConfig(process.env, config.timeoutMs);
   const controller = new AbortController();
-  const report = (event: SyncEvent | JobEvent | ProviderRequestEvent) =>
-    console.log(JSON.stringify(event));
+  const report = (
+    event: SyncEvent | JobEvent | ProviderRequestEvent | OnboardingEvent,
+  ) => console.log(JSON.stringify(event));
   const runtime = createWorkerRuntime(config, undefined, {
     signal: controller.signal,
     report,
@@ -85,6 +87,35 @@ export async function main(args = process.argv.slice(2)) {
     reconcileDrafts: runtime.reconcileDrafts,
     report: deps.report,
   };
+  const onboardingCycle = async () => {
+    try {
+      return await runtime.runOnboarding();
+    } catch {
+      console.log(
+        JSON.stringify({
+          type: 'ONBOARDING_FAILED',
+          reasonCode: 'UNAVAILABLE',
+        }),
+      );
+      return { failed: true };
+    }
+  };
+  const deletionCycle = async () => {
+    try {
+      return await runtime.runAccountDeletions({
+        signal: controller.signal,
+        report: (event) => console.log(JSON.stringify(event)),
+      });
+    } catch {
+      console.log(
+        JSON.stringify({
+          type: 'ACCOUNT_DELETION_RETRY',
+          reasonCode: 'UNAVAILABLE',
+        }),
+      );
+      return { failed: true };
+    }
+  };
   const cycle = async () => {
     const result = await runMailWorkerCycle(
       deps,
@@ -101,9 +132,18 @@ export async function main(args = process.argv.slice(2)) {
   };
   try {
     if (values.once) {
-      const result = await cycle();
-      if (result.failed) process.exitCode = 1;
-    } else await runSyncWorker(deps, syncConfig, controller.signal, cycle);
+      const results = await Promise.all([
+        cycle(),
+        onboardingCycle(),
+        deletionCycle(),
+      ]);
+      if (results.some((result) => result.failed)) process.exitCode = 1;
+    } else
+      await Promise.all([
+        runSyncWorker(deps, syncConfig, controller.signal, cycle),
+        runSyncWorker(deps, syncConfig, controller.signal, onboardingCycle),
+        runSyncWorker(deps, syncConfig, controller.signal, deletionCycle),
+      ]);
   } finally {
     process.removeListener('SIGINT', stop);
     process.removeListener('SIGTERM', stop);

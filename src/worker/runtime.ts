@@ -34,13 +34,17 @@ import { createStylePreferenceRepository } from '@/db/style-preferences';
 import { createWritingProfileRepository } from '@/db/writing-profiles';
 import { createStyleExampleRetriever } from '@/modules/identity/style-example-retriever';
 import { createResponseGenerator } from '@/modules/response/generator';
+import { createOnboardingWorkerStore } from '@/db/onboarding';
+import { runOnboardingAnalysis, type OnboardingEvent } from './onboarding';
+import { inspectAutomationSelection } from './automation-selection';
+import { createAccountDeletionRuntime } from '@/db/account-deletion-runtime';
 
 export function createWorkerRuntime(
   config: ServerConfig = getServerConfig(),
   mocks?: ProviderClients,
   controls: {
     signal?: AbortSignal;
-    report?: (event: ProviderRequestEvent | JobEvent) => void;
+    report?: (event: ProviderRequestEvent | JobEvent | OnboardingEvent) => void;
     enforceExecution?: boolean;
   } = {},
 ) {
@@ -71,10 +75,62 @@ export function createWorkerRuntime(
   };
   const runtime = Object.freeze({
     providers,
+    runAccountDeletions: createAccountDeletionRuntime(config),
     syncStore: createGmailSyncStore(client),
     jobStore: createEmailJobStore(client),
     dataFor: (work: OwnedWorkItem) => openWorkerDataAccess(client, work),
     gmailFor,
+    async runOnboarding() {
+      return runOnboardingAnalysis({
+        store: createOnboardingWorkerStore(client),
+        signal: controls.signal,
+        report: controls.report,
+        async clientsFor(work, assertActive) {
+          const account = await (
+            await openWorkerDataAccess(client, work)
+          ).getAccount();
+          if (config.providerMode !== 'live')
+            throw new Error('GMAIL_UNAVAILABLE');
+          // This explicit, consented analysis is independent of email automation.
+          const base = createProviderRequestExecutor({
+            gate: createProviderRequestGate(client, work),
+            config: requestConfig,
+            signal: controls.signal,
+            accountId: work.gmailAccountId,
+          });
+          const execute: typeof base = (provider, safe, operation, before) =>
+            base(
+              provider,
+              safe,
+              async (remaining) => {
+                await assertActive();
+                return operation(remaining);
+              },
+              async () => {
+                await assertActive();
+                await before?.();
+              },
+            );
+          const scoped = createProviderClients(config, mocks, execute);
+          const gmail = createGmailConnection({
+            store: createGmailCredentialRepository(
+              client,
+              work.userId,
+              work.gmailAccountId,
+            ),
+            providers: scoped,
+            encryptionKey: config.gmail.tokenEncryptionKey,
+            timeoutMs: config.timeoutMs,
+          }).client;
+          return {
+            gmail,
+            text: scoped.text,
+            mailboxAddress: account.email,
+            model: config.openai.model,
+          };
+        },
+      });
+    },
     async reconcileDrafts(limit: number, signal?: AbortSignal) {
       await runDraftReconciliation(
         {
@@ -121,6 +177,15 @@ export function createWorkerRuntime(
           reasonCode: 'STYLE_PROFILE_REQUIRED',
         };
       const gmail = await gmailFor(job);
+      const selection = await inspectAutomationSelection({
+        client,
+        work: job,
+        gmail,
+        messageId: job.targetMessageId,
+        classification: job.classification,
+      });
+      if (selection.reason)
+        return { status: 'SKIPPED', reasonCode: selection.reason };
       return generateEmailJobDraft({
         job,
         store,
