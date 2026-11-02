@@ -93,5 +93,18 @@ export async function exportPrivacyData(client: DataClient, userId: string) {
     }
     result[name] = rows;
   }
+  const external = await client.rpc('sharepoint_command', {
+    p_user_id: userId,
+    p_action: 'export',
+  });
+  if (external.error) {
+    if (
+      external.error.code !== 'PGRST202' ||
+      process.env.SHAREPOINT_ENABLED === 'true'
+    )
+      throw new DataAccessError('UNAVAILABLE');
+  } else result.sharepoint = [external.data];
+  if (Buffer.byteLength(JSON.stringify(result)) > 25 * 1024 * 1024)
+    throw new DataAccessError('UNAVAILABLE');
   return { exportedAt: new Date().toISOString(), data: result };
 }

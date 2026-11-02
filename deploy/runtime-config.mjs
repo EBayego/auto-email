@@ -26,6 +26,17 @@ const gmail = [
   'GMAIL_TOKEN_ENCRYPTION_KEY',
 ];
 const ledger = ['ERASURE_LEDGER_DIRECTORY', 'ERASURE_LEDGER_ENCRYPTION_KEY'];
+const sharepoint = [
+  'SHAREPOINT_ENABLED',
+  'MICROSOFT_CLIENT_ID',
+  'MICROSOFT_CLIENT_SECRET',
+  'MICROSOFT_TOKEN_ENCRYPTION_KEY',
+  'MICROSOFT_ALLOWED_TENANTS',
+  'MICROSOFT_GRAPH_SCOPE',
+  'SHAREPOINT_OCR_ENDPOINT',
+  'SHAREPOINT_OCR_KEY',
+  'SHAREPOINT_OCR_DAILY_PAGE_BUDGET',
+];
 const prices = [
   'OPENAI_INPUT_USD_PER_MILLION',
   'OPENAI_OUTPUT_USD_PER_MILLION',
@@ -38,11 +49,12 @@ export function keysFor(role, input) {
     /^OBSERVABILITY_[A-Z_]+$/.test(name),
   );
   const map = {
-    web: [...common, ...privacy, ...gmail, ...ledger, ...prices],
+    web: [...common, ...privacy, ...gmail, ...ledger, ...prices, ...sharepoint],
     worker: [
       ...common,
       ...privacy,
       ...gmail,
+      ...sharepoint,
       ...ledger,
       ...prices,
       ...controls,

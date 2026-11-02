@@ -18,6 +18,7 @@ import {
 import { readRequestPolicyConfig } from './request-config';
 import { createEmailJobDraftWriter } from './email-drafts';
 import { createKnowledgeSources } from '@/db/knowledge-sources';
+import { checkExternalEvidence } from '@/db/sharepoint-evidence';
 import type { PreparedReplyContext } from '@/modules/gmail/manual-selection';
 import { DataAccessError } from '@/db/errors';
 import { createReplyKnowledgeResolver } from '@/modules/response/knowledge-context';
@@ -298,6 +299,12 @@ export function createWorkerRuntime(
           gmail,
           generator: createResponseGenerator(
             createProviderClients(config, mocks, executorFor(job)).text,
+            {
+              assertKnowledge: (knowledge) =>
+                checkExternalEvidence(client, job.userId, [...knowledge]).then(
+                  () => {},
+                ),
+            },
           ),
           styleExamples: createStyleExampleRetriever({
             gmail,

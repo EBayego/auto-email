@@ -1,3 +1,4 @@
+import type { SharePointDatabaseTables } from './sharepoint-schema';
 export type Json =
   | string
   | number
@@ -8,7 +9,7 @@ export type Json =
 
 export type Database = {
   public: {
-    Tables: {
+    Tables: SharePointDatabaseTables & {
       account_data_events: {
         Row: {
           action: string;
@@ -1441,6 +1442,8 @@ export type Database = {
       };
       source_documents: {
         Row: {
+          connector_id: string | null;
+          origin_url: string | null;
           audience_key: string;
           audience_kind: string;
           byte_size: number;
@@ -1467,6 +1470,8 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          connector_id?: string | null;
+          origin_url?: string | null;
           audience_key?: string;
           audience_kind?: string;
           byte_size: number;
@@ -1492,6 +1497,8 @@ export type Database = {
           version?: number;
         };
         Update: {
+          connector_id?: string | null;
+          origin_url?: string | null;
           audience_key?: string;
           audience_kind?: string;
           byte_size?: number;
@@ -2079,6 +2086,10 @@ export type Database = {
       };
     };
     Functions: {
+      sharepoint_command: {
+        Args: { p_user_id: string; p_action: string; p_input?: Json };
+        Returns: Json;
+      };
       acquire_provider_request: {
         Args: {
           p_account_id?: string;

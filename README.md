@@ -132,6 +132,8 @@ Las credenciales pertenecen al backend o al worker. El dominio compartido no dep
 
 ## Documentación
 
+- [Conector SharePoint: configuración, cobertura y operación](docs/SHAREPOINT-CONFIGURACION.md).
+
 - [Guía maestra: configuración pendiente y puesta en marcha](docs/PUESTA-EN-MARCHA-PRODUCCION.md).
 - [Decisiones de EPIC-00](<docs/Resolucion Tareas Épica EPIC-00/README.md>).
 - [Arquitectura funcional MAIL-003](<docs/Resolucion Tareas Épica EPIC-00/MAIL-003-functional-architecture.md>).

@@ -64,6 +64,7 @@ export type KnowledgeSource = {
   title: string;
   priority: number;
   enabled: boolean;
+  connectorId?: string;
 };
 export type SourceRule = {
   id: string;

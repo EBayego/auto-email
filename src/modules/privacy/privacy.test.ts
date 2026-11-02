@@ -5,6 +5,24 @@ import { privacyOperationSchema, privacyNoticeVersion } from './notice';
 import environment from '../../../tests/fixtures/privacy-env.json';
 
 describe('MAIL-061 aviso y aceptación informada', () => {
+  it('incorpora el tratamiento de SharePoint solo al habilitar el conector', () => {
+    const off = readPrivacyNotice({
+      ...environment,
+      SHAREPOINT_ENABLED: 'false',
+    });
+    const on = readPrivacyNotice({
+      ...environment,
+      SHAREPOINT_ENABLED: 'true',
+    });
+    expect(
+      on.sections.some((section) => section.title.includes('SharePoint')),
+    ).toBe(true);
+    expect(
+      off.sections.some((section) => section.title.includes('SharePoint')),
+    ).toBe(false);
+    expect(on.hash).not.toBe(off.hash);
+    expect(off.hash).toBe(readPrivacyNotice(environment).hash);
+  });
   it('bloquea los permisos sin identidad, contacto, alojamiento, detalles o revisión', () => {
     for (const field of Object.keys(environment)) {
       const env = { ...environment, [field]: '' };

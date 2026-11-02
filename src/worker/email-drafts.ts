@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { checkExternalEvidence } from '@/db/sharepoint-evidence';
 import { createResponseValidationRepository } from '@/db/response-validation';
 import { DraftWriteError } from '@/modules/gmail/draft-contracts';
 import { createResponsePolicyRepository } from '@/db/response-policy';
@@ -120,6 +121,13 @@ export function createEmailJobDraftWriter(input: {
       }
       let factualRejected = false;
       const writer = createDraftWriter({
+        revalidateExternalKnowledge: (response) =>
+          checkExternalEvidence(
+            input.client,
+            job.userId,
+            response.knowledgeReferences ?? [],
+            true,
+          ).then(() => {}),
         recordFactualValidation: async (validation) => {
           factualRejected = true;
           await createResponseValidationRepository(

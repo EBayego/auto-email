@@ -26,19 +26,30 @@ export function createKnowledgeDocuments(
   requireUuid(userId);
   const storage = client.storage.from(bucket);
   const objectKey = (id: string) => `${userId}/${id}`;
+  const preConnectorSchema = (
+    error: { code?: string; message: string } | null,
+  ) =>
+    process.env.SHAREPOINT_ENABLED !== 'true' &&
+    !!error &&
+    ['42703', 'PGRST204'].includes(error.code ?? '') &&
+    error.message.includes('connector_id');
   async function find(id: string) {
     requireUuid(id);
-    const { data, error } = await client
-      .from('source_documents')
-      .select('*')
-      .eq('id', id)
-      .eq('user_id', userId)
-      .maybeSingle();
+    const query = () =>
+      client
+        .from('source_documents')
+        .select('*')
+        .eq('id', id)
+        .eq('user_id', userId);
+    let { data, error } = await query().is('connector_id', null).maybeSingle();
+    if (preConnectorSchema(error))
+      ({ data, error } = await query().maybeSingle());
     if (error) throw new DataAccessError('UNAVAILABLE');
     return requireResource(data);
   }
   return Object.freeze({
     async setAudience(id: string, input: unknown) {
+      await find(id);
       requireUuid(id);
       const parsed = documentAudienceSchema.safeParse(input);
       if (!parsed.success) throw new DataAccessError('INVALID_INPUT');
@@ -52,6 +63,7 @@ export function createKnowledgeDocuments(
       if (!result.data) throw new DataAccessError('NOT_FOUND');
     },
     async setValidity(id: string, input: unknown) {
+      await find(id);
       requireUuid(id);
       const parsed = documentValiditySchema.safeParse(input);
       if (!parsed.success) throw new DataAccessError('INVALID_INPUT');
@@ -65,11 +77,15 @@ export function createKnowledgeDocuments(
       if (!result.data) throw new DataAccessError('NOT_FOUND');
     },
     async list(): Promise<DocumentMetadata[]> {
-      const { data, error } = await client
-        .from('source_documents')
-        .select(columns)
-        .eq('user_id', userId)
+      const query = () =>
+        client.from('source_documents').select(columns).eq('user_id', userId);
+      let { data, error } = await query()
+        .is('connector_id', null)
         .order('uploaded_at', { ascending: false });
+      if (preConnectorSchema(error))
+        ({ data, error } = await query().order('uploaded_at', {
+          ascending: false,
+        }));
       if (error) throw new DataAccessError('UNAVAILABLE');
       return (data ?? []) as DocumentMetadata[];
     },

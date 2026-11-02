@@ -57,6 +57,8 @@ export const knowledgeFragmentSchema = z
     document_name: safeText(200),
     version: z.int().min(1),
     document_updated_at: z.iso.datetime({ offset: true }),
+    connector_id: z.uuid().optional(),
+    origin_url: z.string().url().max(4096).optional(),
     valid_from: z.iso.date().nullable(),
     valid_until: z.iso.date().nullable(),
     audience_kind: z.enum(['GENERAL', 'RECIPIENT', 'DOMAIN']).optional(),

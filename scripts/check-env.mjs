@@ -2,6 +2,7 @@ import nextEnvironment from '@next/env';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { readObservabilityConfig } from '../src/modules/observability/config.ts';
+import { readSharePointConfig } from '../src/config/sharepoint.ts';
 import {
   ConfigurationError,
   readServerConfig,
@@ -20,6 +21,7 @@ export function validateEnvironment(
     },
   });
   readObservabilityConfig();
+  readSharePointConfig();
   return scope === 'web' ? readWebServerConfig() : readServerConfig();
 }
 

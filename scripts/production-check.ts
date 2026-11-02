@@ -7,11 +7,21 @@ import { readPrivacyNotice } from '../src/modules/privacy/config';
 import { getErasureLedger } from '../src/modules/security/erasure-ledger';
 import { readGenerationPricing } from '../src/modules/analytics/generations';
 import { readObservabilityConfig } from '../src/modules/observability/config';
+import { readSharePointConfig } from '../src/config/sharepoint';
 
 export async function productionReadiness(
   env: Record<string, string | undefined> = process.env,
 ) {
   const pending: string[] = [];
+  try {
+    readSharePointConfig(env);
+  } catch (error) {
+    pending.push(
+      ...(error instanceof ConfigurationError
+        ? error.variables
+        : ['SHAREPOINT_CONFIGURATION']),
+    );
+  }
   try {
     const config = readServerConfig(env);
     if (!['production', 'staging'].includes(config.environment))

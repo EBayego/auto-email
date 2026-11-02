@@ -1,4 +1,6 @@
 import { parseArgs } from 'node:util';
+import { runSharePointCycle } from '../src/worker/sharepoint';
+import { createServiceDataClient } from '../src/db/service-client';
 import { logOperationalEvent } from '../src/modules/security/operational-log';
 import { createOperationalTelemetry } from '../src/db/operational-telemetry';
 import { randomUUID } from 'node:crypto';
@@ -155,12 +157,20 @@ export async function main(args = process.argv.slice(2)) {
       },
       { failed: (value) => value.failed },
     );
+  const sharePointCycle = () =>
+    telemetry.run(
+      'KNOWLEDGE',
+      () =>
+        runSharePointCycle(createServiceDataClient(config), controller.signal),
+      { failed: (value) => value.failed },
+    );
   try {
     if (values.once) {
       const results = await Promise.all([
         cycle(),
         onboardingCycle(),
         deletionCycle(),
+        sharePointCycle(),
       ]);
       if (results.some((result) => result.failed)) process.exitCode = 1;
     } else
@@ -168,6 +178,7 @@ export async function main(args = process.argv.slice(2)) {
         runSyncWorker(deps, syncConfig, controller.signal, cycle),
         runSyncWorker(deps, syncConfig, controller.signal, onboardingCycle),
         runSyncWorker(deps, syncConfig, controller.signal, deletionCycle),
+        runSyncWorker(deps, syncConfig, controller.signal, sharePointCycle),
       ]);
   } finally {
     stopHeartbeat();

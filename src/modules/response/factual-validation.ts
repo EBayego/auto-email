@@ -115,6 +115,8 @@ const evidenceHash = (
       documentId: r.documentId,
       version: r.version,
       chunkId: r.chunkId,
+      connectorId: r.connector_id,
+      originUrl: r.origin_url,
     })),
   });
 const seals = new WeakMap<FactualValidation, string>();

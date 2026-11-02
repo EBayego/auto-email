@@ -1,6 +1,6 @@
 # Plan de implementación de conectores a carpetas de SharePoint
 
-Fecha: **2 de noviembre de 2026**. Estado: **plan propuesto; implementación pendiente**.
+Fecha: **2 de noviembre de 2026**. Estado: **implementación de código incorporada; activación y piloto real pendientes**. La configuración, cobertura y límites efectivos están documentados en [SharePoint: configuración y operación](SHAREPOINT-CONFIGURACION.md). La evaluación semántica del corpus real y los conversores de formatos antiguos dependen del inventario del piloto.
 
 ## 1. Resultado esperado y punto de partida
 

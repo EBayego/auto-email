@@ -1,4 +1,6 @@
 import type { DataClient } from './models';
+import { readSharePointConfig } from '@/config/sharepoint';
+import { checkExternalEvidence } from './sharepoint-evidence';
 import { observe } from '@/modules/observability/telemetry';
 import { DataAccessError, requireUuid } from './errors';
 import {
@@ -50,7 +52,12 @@ export function createKnowledgeSources(client: DataClient, userId: string) {
     });
     if (result.error) databaseError(result.error);
     if (!result.data) throw new DataAccessError('FORBIDDEN');
-    return result.data as unknown as SourceConfiguration;
+    const config = result.data as unknown as SourceConfiguration;
+    if (!readSharePointConfig())
+      config.sources = config.sources.map((s) =>
+        s.connectorId ? { ...s, enabled: false } : s,
+      );
+    return config;
   }
   const retriever = createKnowledgeRetriever({
     configuration: list,
@@ -69,13 +76,22 @@ export function createKnowledgeSources(client: DataClient, userId: string) {
           }),
         ),
       );
-      return results.flatMap((result) => {
+      const configuration = await list();
+      const candidates = results.flatMap((result) => {
         if (result.status === 'rejected')
           throw new DataAccessError('UNAVAILABLE');
         if (result.value.error) databaseError(result.value.error);
         return (result.value.data ?? []).map(({ rank, ...fields }) => {
           const parsed = knowledgeFragmentSchema.safeParse({
             ...fields,
+            ...(configuration.sources.find((s) => s.id === fields.source_id)
+              ?.connectorId
+              ? {
+                  connector_id: configuration.sources.find(
+                    (s) => s.id === fields.source_id,
+                  )!.connectorId,
+                }
+              : {}),
             source_priority: 0,
           });
           if (!parsed.success) throw new DataAccessError('UNAVAILABLE');
@@ -83,6 +99,11 @@ export function createKnowledgeSources(client: DataClient, userId: string) {
           void _priority;
           return { ...fragment, rank };
         });
+      });
+      const external = await checkExternalEvidence(client, userId, candidates);
+      return candidates.map((candidate) => {
+        const meta = external.get(candidate.document_id);
+        return meta ? { ...candidate, origin_url: meta.web_url } : candidate;
       });
     },
     async assertRevision(revision) {
@@ -182,6 +203,13 @@ export function createKnowledgeSources(client: DataClient, userId: string) {
           p_limit: limit,
         });
         if (result.error) databaseError(result.error);
+        const references = (result.data ?? []).map((row) => ({
+          ...row,
+          connector_id: configuration.sources.find(
+            (s) => s.id === row.source_id,
+          )?.connectorId,
+        }));
+        await checkExternalEvidence(client, userId, references);
         return result.data ?? [];
       });
       return { plan, ...results };

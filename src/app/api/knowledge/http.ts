@@ -5,6 +5,8 @@ import { DocumentError } from '@/modules/knowledge/documents';
 import { SourceConfigurationError } from '@/modules/source-router/sources';
 import { KnowledgeRetrievalError } from '@/modules/knowledge/retriever';
 import { PrivacyError } from '@/modules/privacy/notice';
+import { SharePointError } from '@/modules/sharepoint/contracts';
+import { ZodError } from 'zod';
 
 export const privateHeaders = {
   'Cache-Control': 'private, no-store, max-age=0',
@@ -57,9 +59,12 @@ export function documentErrorResponse(error: unknown) {
     error instanceof DocumentError ||
     error instanceof SourceConfigurationError ||
     error instanceof KnowledgeRetrievalError ||
-    error instanceof PrivacyError
+    error instanceof PrivacyError ||
+    error instanceof SharePointError
       ? error.code
-      : 'UNAVAILABLE';
+      : error instanceof ZodError
+        ? 'INVALID_INPUT'
+        : 'UNAVAILABLE';
   const status =
     error instanceof PrivacyError
       ? 409

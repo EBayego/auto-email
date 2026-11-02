@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   privacyNoticeVersion,
   privacySections,
+  sharePointPrivacySection,
   privacyGrantText,
   PrivacyError,
 } from './notice';
@@ -26,15 +27,19 @@ export function readPrivacyNotice(
   });
   const identity = parsed.success ? parsed.data : null;
   const ready = !!identity && env.PRIVACY_REVIEW_APPROVED === 'true';
+  const sections =
+    env.SHAREPOINT_ENABLED === 'true'
+      ? [...privacySections, sharePointPrivacySection]
+      : privacySections;
   const snapshot = JSON.stringify({
     version: privacyNoticeVersion,
-    sections: privacySections,
+    sections,
     authorization: privacyGrantText,
     identity,
   });
   return {
     version: privacyNoticeVersion,
-    sections: privacySections,
+    sections,
     identity,
     ready,
     snapshot,

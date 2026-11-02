@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
 export const privacyNoticeVersion = 'mail061-v1';
+export const sharePointPrivacySection = {
+  title: 'Fuentes opcionales de SharePoint y OCR',
+  text: 'Si conectas Microsoft 365, Auto Email leerá las carpetas y subcarpetas que elijas y mantendrá un índice local de sus textos, versiones y referencias para fundamentar respuestas. Los originales permanecen en SharePoint; las descargas se procesan temporalmente. Los permisos de Microsoft pueden abarcar más recursos que la selección de la aplicación, cuyo alcance eliges al conectar. Las credenciales se guardan cifradas. Los fragmentos pertinentes pueden enviarse a OpenAI para preparar y comprobar borradores. Cuando se configura OCR, los documentos e imágenes que lo requieren se envían al recurso Azure Document Intelligence del operador. Los proveedores, regiones y plazos efectivos se detallan por el operador. Las reglas y las restricciones de destinatarios controlan el uso de cada fuente. Desconectar una carpeta o cuenta retira sus textos e índices locales. Retirar esta autorización pausa los conectores, elimina sus credenciales y bloquea nuevos accesos; puedes exportar o retirar los derivados conservados. Los borradores ya creados en Gmail permanecen para tu revisión. Una petición enviada a un proveedor puede terminar.',
+};
 export const privacyGrantText =
   'He leído esta información y autorizo a Auto Email a acceder a mi Gmail y comunicar a OpenAI el contenido necesario para las funciones descritas de mi cuenta. Puedo retirar este permiso desde Ajustes.';
 export const privacySections = [

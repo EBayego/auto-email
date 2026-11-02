@@ -10,7 +10,8 @@ export async function GET(request: NextRequest) {
     const params = request.nextUrl.searchParams;
     if (
       [...params.keys()].some(
-        (key) => !['q', 'limit', 'documentId', 'intent'].includes(key),
+        (key) =>
+          !['q', 'limit', 'documentId', 'intent', 'recipient'].includes(key),
       ) ||
       [...params.keys()].some((key) => params.getAll(key).length !== 1)
     )
@@ -25,10 +26,14 @@ export async function GET(request: NextRequest) {
             typeof sources.retrieve
           >[0]['intent'],
           maxFragments: Number(params.get('limit') ?? '6'),
+          ...(params.has('recipient')
+            ? { recipient: params.get('recipient')! }
+            : {}),
         }),
         { headers: privateHeaders },
       );
     }
+    if (params.has('recipient')) throw new DataAccessError('INVALID_INPUT');
     const documents = await getKnowledgeDocuments();
     const matches = await documents.search(
       params.get('q') ?? '',

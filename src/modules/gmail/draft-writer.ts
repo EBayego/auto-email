@@ -50,6 +50,9 @@ export function createDraftWriter(input: {
   monotonicNow?: () => number;
   signal?: AbortSignal;
   recordFactualValidation?: (validation: FactualAudit) => Promise<void>;
+  revalidateExternalKnowledge?: (
+    response: ResponseGenerationResult,
+  ) => Promise<void>;
 }) {
   return Object.freeze({
     async create(options: {
@@ -188,7 +191,14 @@ export function createDraftWriter(input: {
       let attempted = false;
       const now = input.monotonicNow ?? (() => performance.now());
       let readAt = -Infinity;
+      let externalReadAt = Infinity;
       const revalidate = async () => {
+        if (response.knowledgeReferences?.some((r) => r.connector_id)) {
+          if (!input.revalidateExternalKnowledge)
+            throw new DraftPreconditionError('PREWRITE_FAILED');
+          await input.revalidateExternalKnowledge(response);
+          externalReadAt = now();
+        }
         let matches = false;
         await selectPendingEmail(
           {
@@ -243,6 +253,7 @@ export function createDraftWriter(input: {
                 // unavoidable race between this last snapshot and Google's POST.
                 if (
                   input.signal?.aborted ||
+                  now() - externalReadAt > draftRevalidationMaxAgeMs ||
                   now() - readAt > draftRevalidationMaxAgeMs
                 )
                   throw new DraftPreconditionError('PREWRITE_FAILED');

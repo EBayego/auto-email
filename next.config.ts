@@ -7,27 +7,26 @@ import { assertNoPublicSecrets } from './src/config/env';
 assertNoPublicSecrets();
 
 // The parser runs outside the Next.js bundle; include its complete dependency tree.
-const parserFiles = new Set(['./scripts/knowledge-parser.mjs']);
+const parserFiles = new Set([
+  './scripts/knowledge-parser.mjs',
+  './scripts/sharepoint-parser.mjs',
+]);
 const parserRequire = createRequire(import.meta.url);
 function traceParserPackage(name: string, from = process.cwd()) {
   let manifest: string;
   try {
     manifest = parserRequire.resolve(`${name}/package.json`, { paths: [from] });
   } catch {
-    let directory = path.dirname(
-      parserRequire.resolve(name, { paths: [from] }),
-    );
+    let directory = path.resolve(from);
     while (
-      !existsSync(path.join(directory, 'package.json')) ||
-      JSON.parse(readFileSync(path.join(directory, 'package.json'), 'utf8'))
-        .name !== name
+      !existsSync(path.join(directory, 'node_modules', name, 'package.json'))
     ) {
       const parent = path.dirname(directory);
       if (parent === directory)
         throw new Error(`No se pudo localizar el paquete ${name}`);
       directory = parent;
     }
-    manifest = path.join(directory, 'package.json');
+    manifest = path.join(directory, 'node_modules', name, 'package.json');
   }
   const directory = path.dirname(manifest);
   const glob = `./${path.relative(process.cwd(), directory).replaceAll('\\', '/')}/**`;
@@ -44,7 +43,13 @@ function traceParserPackage(name: string, from = process.cwd()) {
     }
   }
 }
-for (const name of ['pdfjs-dist', 'mammoth', 'yauzl', 'html-to-text'])
+for (const name of [
+  'pdfjs-dist',
+  'mammoth',
+  'yauzl',
+  'html-to-text',
+  'fast-xml-parser',
+])
   traceParserPackage(name);
 
 const nextConfig: NextConfig = {
@@ -86,7 +91,13 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: process.cwd(),
   },
-  serverExternalPackages: ['pdfjs-dist', 'mammoth', 'yauzl'],
+  serverExternalPackages: [
+    'pdfjs-dist',
+    'mammoth',
+    'yauzl',
+    'fast-xml-parser',
+    '@azure/msal-node',
+  ],
   outputFileTracingIncludes: {
     '/api/knowledge/documents{,/**}': [...parserFiles],
   },

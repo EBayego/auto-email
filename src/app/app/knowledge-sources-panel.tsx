@@ -53,20 +53,28 @@ export function KnowledgeSourcesPanel({
   const [message, setMessage] = useState('');
   const [editing, setEditing] = useState<SourceRule | null>(null);
   const [result, setResult] = useState<RoutedResult | null>(null);
-  const resultIsCurrent = result?.review.references.every((reference) =>
-    documents.some(
-      (document) =>
-        document.id === reference.document_id &&
-        document.source_id === reference.source_id &&
-        document.version === reference.version &&
-        document.status === 'READY' &&
-        document.content_updated_at === reference.document_updated_at &&
-        document.valid_from === reference.valid_from &&
-        document.valid_until === reference.valid_until &&
-        (!document.indexed_at ||
-          Date.parse(document.indexed_at) <=
-            Date.parse(result.review.evaluated_at)),
-    ),
+  const resultIsCurrent = result?.review.references.every(
+    (reference) =>
+      Boolean(
+        reference.connector_id &&
+        reference.origin_url &&
+        configuration.sources.some(
+          (s) => s.connectorId === reference.connector_id && s.enabled,
+        ),
+      ) ||
+      documents.some(
+        (document) =>
+          document.id === reference.document_id &&
+          document.source_id === reference.source_id &&
+          document.version === reference.version &&
+          document.status === 'READY' &&
+          document.content_updated_at === reference.document_updated_at &&
+          document.valid_from === reference.valid_from &&
+          document.valid_until === reference.valid_until &&
+          (!document.indexed_at ||
+            Date.parse(document.indexed_at) <=
+              Date.parse(result.review.evaluated_at)),
+      ),
   );
   async function load() {
     const response = await fetch('/api/knowledge/sources', {
@@ -91,26 +99,31 @@ export function KnowledgeSourcesPanel({
   }
   useEffect(() => {
     let active = true;
-    fetch('/api/knowledge/sources', { cache: 'no-store' })
-      .then(async (response) => {
-        if (!response.ok) throw new Error();
-        return response.json();
-      })
-      .then((value) => {
-        if (active) {
-          setConfiguration(value);
-          onConfigurationChange?.(value);
-          setLoaded(true);
-        }
-      })
-      .catch(() => {
-        if (active) setMessage('No se pueden cargar las fuentes.');
-      })
-      .finally(() => {
-        if (active) setBusy(false);
-      });
+    const refresh = () => {
+      void fetch('/api/knowledge/sources', { cache: 'no-store' })
+        .then(async (response) => {
+          if (!response.ok) throw new Error();
+          return response.json();
+        })
+        .then((value) => {
+          if (active) {
+            setConfiguration(value);
+            onConfigurationChange?.(value);
+            setLoaded(true);
+          }
+        })
+        .catch(() => {
+          if (active) setMessage('No se pueden cargar las fuentes.');
+        })
+        .finally(() => {
+          if (active) setBusy(false);
+        });
+    };
+    refresh();
+    window.addEventListener('sharepoint-sources-changed', refresh);
     return () => {
       active = false;
+      window.removeEventListener('sharepoint-sources-changed', refresh);
     };
   }, [onConfigurationChange]);
   async function mutate(operation: SourceOperation) {
@@ -184,10 +197,15 @@ export function KnowledgeSourcesPanel({
     setResult(null);
     setMessage('Consultando fuentes autorizadas…');
     try {
-      const response = await fetch(
-        `/api/knowledge/search?${new URLSearchParams({ q: String(data.get('query')), intent: String(data.get('intent')) })}`,
-        { cache: 'no-store' },
-      );
+      const params = new URLSearchParams({
+        q: String(data.get('query')),
+        intent: String(data.get('intent')),
+      });
+      if (data.get('recipient'))
+        params.set('recipient', String(data.get('recipient')));
+      const response = await fetch(`/api/knowledge/search?${params}`, {
+        cache: 'no-store',
+      });
       if (!response.ok) throw new Error((await response.json()).error);
       setResult(await response.json());
       setMessage('');
@@ -246,7 +264,7 @@ export function KnowledgeSourcesPanel({
                     (document) => document.source_id === source.id,
                   ).length
                 }{' '}
-                documentos
+                documentos subidos manualmente
               </p>
             </div>
             <button
@@ -414,12 +432,14 @@ export function KnowledgeSourcesPanel({
                 }
               >
                 <option value="">Sin fuente asignada</option>
-                {configuration.sources.map((source) => (
-                  <option key={source.id} value={source.id}>
-                    {source.title}
-                    {!source.enabled ? ' (desactivada)' : ''}
-                  </option>
-                ))}
+                {configuration.sources
+                  .filter((source) => !source.connectorId)
+                  .map((source) => (
+                    <option key={source.id} value={source.id}>
+                      {source.title}
+                      {!source.enabled ? ' (desactivada)' : ''}
+                    </option>
+                  ))}
               </select>
             </label>
           ))}
@@ -592,6 +612,10 @@ export function KnowledgeSourcesPanel({
           <input name="query" maxLength={300} required />
         </label>
         <label>
+          Destinatario para comprobar fuentes restringidas (opcional)
+          <input name="recipient" type="email" maxLength={254} />
+        </label>
+        <label>
           Intención
           <select name="intent" defaultValue="REQUEST_INFORMATION">
             {Object.entries(intents)
@@ -736,13 +760,15 @@ export function KnowledgeSourcesPanel({
           )}
           <ul className="documents-list">
             {result.matches
-              .filter((match) =>
-                documents.some(
-                  (d) =>
-                    d.id === match.document_id &&
-                    d.source_id === match.source_id &&
-                    d.version === match.version,
-                ),
+              .filter(
+                (match) =>
+                  Boolean(match.connector_id && match.origin_url) ||
+                  documents.some(
+                    (d) =>
+                      d.id === match.document_id &&
+                      d.source_id === match.source_id &&
+                      d.version === match.version,
+                  ),
               )
               .map((match) => (
                 <li key={match.chunk_id}>
@@ -777,6 +803,15 @@ export function KnowledgeSourcesPanel({
                     </code>
                   </details>
                   <p className="knowledge-excerpt">{match.content}</p>
+                  {match.origin_url && (
+                    <a
+                      href={match.origin_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Revisar original en SharePoint
+                    </a>
+                  )}
                 </li>
               ))}
           </ul>

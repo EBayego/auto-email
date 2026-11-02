@@ -23,6 +23,7 @@ import {
 import { detectReplyLanguage } from './language';
 import { violatesStylePreferences } from '@/modules/identity/style-preferences';
 import { knowledgeReference } from '@/modules/knowledge/provenance';
+import type { KnowledgeFragment } from '@/modules/knowledge/retriever';
 import { claimsMissingEvidence } from '@/modules/knowledge/sufficiency';
 import {
   promptSecurityVersion,
@@ -49,9 +50,13 @@ import {
   applyFactualValidation,
   type FactualValidation,
 } from './factual-validation';
+type ResponseGeneratorOptions = {
+  unpersonalizedEvaluation?: boolean;
+  assertKnowledge?: (knowledge: readonly KnowledgeFragment[]) => Promise<void>;
+};
 export function createResponseGenerator(
   client: TextGenerationClient,
-  options: { unpersonalizedEvaluation?: boolean } = {},
+  options: ResponseGeneratorOptions = {},
 ): ResponseGenerator {
   const generator = createBaseResponseGenerator(client, options);
   return Object.freeze({
@@ -72,7 +77,7 @@ export function createResponseGenerator(
 }
 function createBaseResponseGenerator(
   client: TextGenerationClient,
-  options: { unpersonalizedEvaluation?: boolean } = {},
+  options: ResponseGeneratorOptions = {},
 ): ResponseGenerator {
   return Object.freeze({
     async generate(
@@ -180,6 +185,11 @@ function createBaseResponseGenerator(
         name: string,
         schema: Record<string, unknown>,
       ) => {
+        if (prepared.knowledge.some((fragment) => fragment.connector_id)) {
+          if (!options.assertKnowledge)
+            throw new ResponseGenerationError('INVALID_INPUT');
+          await options.assertKnowledge(prepared.knowledge);
+        }
         modelCalls++;
         const generated = await client.generate({
           instructions,

@@ -20,6 +20,8 @@ export type KnowledgeReference = Pick<
   | 'document_updated_at'
   | 'valid_from'
   | 'valid_until'
+  | 'connector_id'
+  | 'origin_url'
 > & {
   reference_id: string;
   currency: KnowledgeCurrency;
