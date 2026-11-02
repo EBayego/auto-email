@@ -10,9 +10,13 @@ const testImports = {
   group: [
     'vitest',
     '@vitest/*',
+    '@playwright/test',
+    'playwright',
+    'playwright-core',
     '**/tests/**',
     '**/*.test',
     '**/*.integration',
+    '**/*.e2e',
   ],
   message: 'Los fixtures y mocks solo pueden importarse desde pruebas.',
 };

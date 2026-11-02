@@ -19,10 +19,22 @@ const complete = vi.fn<
 const origin = 'https://app.example.com';
 
 describe('endpoints OAuth Gmail', () => {
-  it('conserva el retorno fijo al onboarding sin aceptar URLs arbitrarias', async () => {
+  it('muestra la información previa cuando se accede al enlace antiguo sin iniciar OAuth', async () => {
     const response = await connect(
       new NextRequest(
         `${origin}/api/gmail/connect?onboarding=1&next=https://evil.invalid`,
+      ),
+    );
+    expect(response.headers.get('location')).toBe(
+      `${origin}/privacy-consent?onboarding=1`,
+    );
+    expect(begin).not.toHaveBeenCalled();
+    expect(response.cookies.get(gmailOAuthCookie)).toBeUndefined();
+  });
+  it('conserva el retorno fijo al onboarding sin aceptar URLs arbitrarias', async () => {
+    const response = await connect(
+      new NextRequest(
+        `${origin}/api/gmail/connect?authorized=1&onboarding=1&next=https://evil.invalid`,
       ),
     );
     expect(response.cookies.get(gmailOnboardingCookie)).toMatchObject({
@@ -76,7 +88,7 @@ describe('endpoints OAuth Gmail', () => {
   it('redirige a Google y establece una cookie HttpOnly, Secure y SameSite=Lax con plazo limitado', async () => {
     const response = await connect(
       new NextRequest(
-        `${origin}/api/gmail/connect?userId=attacker&next=https://attacker.example`,
+        `${origin}/api/gmail/connect?authorized=1&userId=attacker&next=https://attacker.example`,
       ),
     );
     expect(response.status).toBe(303);
@@ -104,7 +116,7 @@ describe('endpoints OAuth Gmail', () => {
       new DataAccessError(code),
     );
     const response = await connect(
-      new NextRequest(`${origin}/api/gmail/connect`),
+      new NextRequest(`${origin}/api/gmail/connect?authorized=1`),
     );
     expect(response.status).toBe(status);
     expect(await response.json()).toEqual({ error: code });
@@ -122,7 +134,7 @@ describe('endpoints OAuth Gmail', () => {
     expect(
       (
         await connect(
-          new NextRequest(`${origin}/api/gmail/connect`, {
+          new NextRequest(`${origin}/api/gmail/connect?authorized=1`, {
             headers: { 'sec-fetch-site': 'cross-site' },
           }),
         )
@@ -221,7 +233,7 @@ describe('endpoints OAuth Gmail', () => {
   it('una desconexión pendiente muestra instrucciones antes de volver a iniciar OAuth', async () => {
     begin.mockRejectedValue(new GmailOAuthError('DISCONNECT_PENDING'));
     const response = await connect(
-      new NextRequest(`${origin}/api/gmail/connect`),
+      new NextRequest(`${origin}/api/gmail/connect?authorized=1`),
     );
     expect(response.headers.get('location')).toBe(
       `${origin}/app?gmail=DISCONNECT_PENDING`,

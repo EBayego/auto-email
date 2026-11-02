@@ -3,7 +3,7 @@ import type { DataClient } from './models';
 import { DataAccessError } from './errors';
 import { createOwnerRepositories } from './repositories';
 import { createServiceDataClient } from './service-client';
-import { getServerConfig } from '@/config/env';
+import { getDataServiceConfig } from '@/config/env';
 import { createAccountLifecycleRepository } from './account-deletion';
 export async function openUserAccountLifecycle(client: DataClient) {
   const { data, error } = await client.auth.getUser();
@@ -19,7 +19,7 @@ export async function openUserAccountLifecycle(client: DataClient) {
   const profile = await createOwnerRepositories(client, user.id).users.get();
   if (!profile || !['ACTIVE', 'DELETION_PENDING'].includes(profile.status))
     throw new DataAccessError('FORBIDDEN');
-  const service = createServiceDataClient(getServerConfig()),
+  const service = createServiceDataClient(getDataServiceConfig()),
     repository = createAccountLifecycleRepository(service, user.id);
   return Object.freeze({
     ...repository,

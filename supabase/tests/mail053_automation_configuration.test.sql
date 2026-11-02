@@ -2,6 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select no_plan();
 insert into auth.users(id,aud,role,email) values('00000000-0000-4000-8000-000000000531','authenticated','authenticated','mail053@example.invalid');
+\ir fixtures/privacy.inc
 insert into public.gmail_accounts(id,user_id,email,status,encrypted_refresh_token,scope_set) values('10000000-0000-4000-8000-000000000531','00000000-0000-4000-8000-000000000531','mail053@example.invalid','CONNECTED','\x74657374',array['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/gmail.compose']);
 create temporary table config as select public.get_automation_configuration('00000000-0000-4000-8000-000000000531') value;
 select is((select value->'settings'->>'processingScope' from config),'ALL_INCOMING','La selección inicial conserva el comportamiento existente');

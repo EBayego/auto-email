@@ -5,6 +5,7 @@ select no_plan();
 insert into auth.users(id,aud,role,email) values
  ('00000000-0000-4000-8000-000000000038','authenticated','authenticated','mail038@example.invalid'),
  ('00000000-0000-4000-8000-000000000138','authenticated','authenticated','mail038-other@example.invalid');
+\ir fixtures/privacy.inc
 create temporary table source38 as select * from public.save_knowledge_source('00000000-0000-4000-8000-000000000038','Tarifas',10,true);
 create temporary table other38 as select * from public.save_knowledge_source('00000000-0000-4000-8000-000000000138','Privada',10,true);
 create temporary table rule38 as select * from public.save_source_rule('00000000-0000-4000-8000-000000000038','Precios','REQUEST_INFORMATION',array['precio'],10,true,false,array[(select id from source38)],'{}','{}');

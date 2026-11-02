@@ -4,6 +4,7 @@ import { DataAccessError } from '@/db/errors';
 import { DocumentError } from '@/modules/knowledge/documents';
 import { SourceConfigurationError } from '@/modules/source-router/sources';
 import { KnowledgeRetrievalError } from '@/modules/knowledge/retriever';
+import { PrivacyError } from '@/modules/privacy/notice';
 
 export const privateHeaders = {
   'Cache-Control': 'private, no-store, max-age=0',
@@ -55,27 +56,32 @@ export function documentErrorResponse(error: unknown) {
     error instanceof DataAccessError ||
     error instanceof DocumentError ||
     error instanceof SourceConfigurationError ||
-    error instanceof KnowledgeRetrievalError
+    error instanceof KnowledgeRetrievalError ||
+    error instanceof PrivacyError
       ? error.code
       : 'UNAVAILABLE';
   const status =
-    code === 'UNAUTHENTICATED'
-      ? 401
-      : code === 'FORBIDDEN'
-        ? 403
-        : code === 'NOT_FOUND'
-          ? 404
-          : code === 'FILE_TOO_LARGE'
-            ? 413
-            : code === 'DOCUMENT_LIMIT' ||
-                code === 'DOCUMENT_BUSY' ||
-                error instanceof SourceConfigurationError
-              ? 409
-              : ['UNAVAILABLE', 'UPLOAD_FAILED', 'PROCESSING_FAILED'].includes(
-                    code,
-                  )
-                ? 503
-                : 400;
+    error instanceof PrivacyError
+      ? 409
+      : code === 'UNAUTHENTICATED'
+        ? 401
+        : code === 'FORBIDDEN'
+          ? 403
+          : code === 'NOT_FOUND'
+            ? 404
+            : code === 'FILE_TOO_LARGE'
+              ? 413
+              : code === 'DOCUMENT_LIMIT' ||
+                  code === 'DOCUMENT_BUSY' ||
+                  error instanceof SourceConfigurationError
+                ? 409
+                : [
+                      'UNAVAILABLE',
+                      'UPLOAD_FAILED',
+                      'PROCESSING_FAILED',
+                    ].includes(code)
+                  ? 503
+                  : 400;
   return NextResponse.json(
     { error: code },
     { status, headers: privateHeaders },

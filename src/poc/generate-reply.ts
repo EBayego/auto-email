@@ -22,6 +22,7 @@ export async function generateReplyForThread(
     retrieveKnowledge?: ReplyOrchestratorDependencies['retrieveKnowledge'];
     policy?: ReplyOrchestratorDependencies['policy'];
     factualValidation?: ReplyOrchestratorDependencies['factualValidation'];
+    generations?: ReplyOrchestratorDependencies['generations'];
   },
 ): Promise<ReplyGenerationReport> {
   const orchestrator = createReplyOrchestrator({
@@ -41,6 +42,7 @@ export async function generateReplyForThread(
     retrieveKnowledge: input.retrieveKnowledge,
     policy: input.policy,
     factualValidation: input.factualValidation,
+    generations: input.generations,
   });
   const { selection, generation } = await orchestrator.generate(input);
   return { selection, generation };

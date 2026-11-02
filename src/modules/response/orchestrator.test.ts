@@ -116,6 +116,56 @@ function setup(name: keyof ReturnType<typeof createEmailFixtures> = 'pending') {
 }
 
 describe('MAIL-044 ReplyOrchestrator', () => {
+  it('MAIL-056 registra antes de entregar y propaga la referencia sin duplicar por errores del consumidor', async () => {
+    const f = setup();
+    const record = vi.fn(async () => {
+      f.stages.push('record');
+    });
+    const consume = vi.fn(async (response) => {
+      expect(response.generationRunId).toMatch(/^[a-f0-9-]{36}$/);
+      expect(f.stages.at(-1)).toBe('record');
+      throw new Error('CONSUMER_FAILED');
+    });
+    await expect(
+      createReplyOrchestrator({ ...f.deps, generations: { record } }).generate({
+        ...f.request,
+        consume,
+      }),
+    ).rejects.toThrow('CONSUMER_FAILED');
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record.mock.calls[0]).toBeDefined();
+  });
+  it('MAIL-056 registra fallos sin serializar el mensaje de error', async () => {
+    const f = setup();
+    const record = vi.fn();
+    f.text.generate.mockRejectedValue(new Error('PRIVATE_PROVIDER_BODY'));
+    await expect(
+      createReplyOrchestrator({ ...f.deps, generations: { record } }).generate(
+        f.request,
+      ),
+    ).rejects.toThrow('PRIVATE_PROVIDER_BODY');
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record.mock.calls[0][0]).toMatchObject({
+      response: null,
+      durationMs: expect.any(Number),
+    });
+    expect(JSON.stringify(record.mock.calls)).not.toContain(
+      'PRIVATE_PROVIDER_BODY',
+    );
+  });
+  it('MAIL-056 un fallo al persistir impide entregar la generación a Gmail', async () => {
+    const f = setup();
+    const consume = vi.fn(),
+      record = vi.fn().mockRejectedValue(new Error('DB_UNAVAILABLE'));
+    await expect(
+      createReplyOrchestrator({ ...f.deps, generations: { record } }).generate({
+        ...f.request,
+        consume,
+      }),
+    ).rejects.toThrow('DB_UNAVAILABLE');
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(consume).not.toHaveBeenCalled();
+  });
   it('recupera perfil, clasifica, obtiene evidencia y devuelve el contrato estructurado de MAIL-043', async () => {
     const f = setup();
     const result = await f.orchestrator.generate(f.request);

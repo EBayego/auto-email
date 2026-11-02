@@ -18,6 +18,7 @@ export type GmailCredential = Readonly<{
   accessTokenExpiresAt: string | null;
 }>;
 export type GmailCredentialStore = {
+  assertAuthorized?(): Promise<void>;
   get(): Promise<GmailCredential>;
   acquire(
     value: GmailCredential,
@@ -97,6 +98,7 @@ export function createGmailConnection(input: {
 
   const obtain = async (): Promise<SecretValue> => {
     for (let attempt = 0; attempt < 10; attempt++) {
+      await store.assertAuthorized?.();
       const account = await store.get();
       if (account.status === 'REAUTH_REQUIRED')
         throw new GmailCredentialError('REAUTH_REQUIRED');
@@ -195,6 +197,7 @@ export function createGmailConnection(input: {
     for (let attempt = 0; attempt < (retryRead ? 2 : 1); attempt++) {
       let used: SecretValue | undefined;
       const client = providers.gmail(async () => {
+        await store.assertAuthorized?.();
         used = await getAccessToken();
         return used.reveal();
       });

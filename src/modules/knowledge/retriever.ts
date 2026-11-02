@@ -110,6 +110,7 @@ const inputSchema = z
   .strict();
 export type KnowledgeRetrievalInput = z.input<typeof inputSchema>;
 export type KnowledgeRetrievalResult = {
+  consultedSourceIds?: string[];
   classification?: Pick<EmailClassification, 'intent' | 'riskFlags'>;
   plan: SourcePlan;
   matches: KnowledgeFragment[];
@@ -253,6 +254,7 @@ export function createKnowledgeRetriever(
           terms.push(`"${word}"`);
       }
       let truncated = false;
+      const consultedSourceIds = new Set<string>();
       const requirements = assessEvidence({
         question: options.question,
         intent: options.intent,
@@ -261,6 +263,7 @@ export function createKnowledgeRetriever(
       }).requirements;
       async function search(ids: string[]) {
         if (!terms.length || !ids.length) return [];
+        ids.forEach((id) => consultedSourceIds.add(id));
         const sources = [...plan.primarySources, ...plan.fallbackSources];
         const candidates = await deps.search({
           query: terms.join(' OR '),
@@ -421,6 +424,7 @@ export function createKnowledgeRetriever(
       const { matches, review } = selected;
       return {
         plan,
+        consultedSourceIds: [...consultedSourceIds],
         matches,
         usedFallback,
         tokenUpperBound: knowledgeTokenUpperBound(matches),

@@ -1,0 +1,109 @@
+name: ${COMPOSE_PROJECT_NAME:-auto-email-prod}
+
+x-app: &app
+  image: ${APP_IMAGE:?Set APP_IMAGE to an immutable application image}
+  init: true
+  restart: unless-stopped
+  read_only: true
+  user: '10001:10001'
+  cap_drop: [ALL]
+  security_opt: ['no-new-privileges:true']
+  stop_grace_period: 90s
+  tmpfs:
+    - /tmp:rw,nosuid,size=256m,uid=10001,gid=10001
+    - /app/.next/cache:rw,nosuid,size=128m,uid=10001,gid=10001
+  logging:
+    driver: json-file
+    options: { max-size: 10m, max-file: '3' }
+
+x-ops: &ops
+  image: ${OPS_IMAGE:?Set OPS_IMAGE to an immutable operations image}
+  profiles: [operations]
+  init: true
+  restart: 'no'
+  read_only: true
+  user: '10001:10001'
+  cap_drop: [ALL]
+  security_opt: ['no-new-privileges:true']
+  tmpfs: ['/tmp:rw,nosuid,size=1g,uid=10001,gid=10001']
+
+services:
+  web:
+    <<: *app
+    command: [web]
+    ports: ['127.0.0.1:${WEB_BIND_PORT:-3087}:3000']
+    secrets: [{ source: web, target: runtime.json }]
+    volumes:
+      - ${ERASURE_LEDGER_HOST_PATH:?Set persistent ledger path}:/var/lib/auto-email/erasures
+    mem_limit: 1g
+    healthcheck:
+      test: [CMD, node, deploy/healthcheck.mjs, web]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+  worker:
+    <<: *app
+    command: [worker]
+    secrets: [{ source: worker, target: runtime.json }]
+    volumes:
+      - ${ERASURE_LEDGER_HOST_PATH:?Set persistent ledger path}:/var/lib/auto-email/erasures
+    mem_limit: 1g
+    healthcheck:
+      test: [CMD, node, deploy/healthcheck.mjs, worker]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+  monitor:
+    <<: *app
+    command: [monitor]
+    secrets: [{ source: monitor, target: runtime.json }]
+    mem_limit: 256m
+    healthcheck:
+      test: [CMD, node, deploy/healthcheck.mjs, monitor]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+  migrate:
+    <<: *ops
+    command: [migrate]
+    secrets: [{ source: migrate, target: runtime.json }]
+  ledger-init:
+    <<: *ops
+    command: [ledger-init]
+    secrets: [{ source: worker, target: runtime.json }]
+    volumes: ['${ERASURE_LEDGER_HOST_PATH}:/var/lib/auto-email/erasures']
+  preflight:
+    <<: *ops
+    command: [preflight]
+    secrets: [{ source: preflight, target: runtime.json }]
+    volumes: ['${ERASURE_LEDGER_HOST_PATH}:/var/lib/auto-email/erasures']
+  backup:
+    <<: *ops
+    command: [backup, create]
+    secrets:
+      - { source: backup, target: runtime.json }
+      - { source: database, target: database.conf }
+      - { source: backup_password, target: backup-password }
+      - { source: database_ca, target: database-ca.crt }
+    volumes:
+      - ${ERASURE_LEDGER_HOST_PATH}:/var/lib/auto-email/erasures:ro
+      - ${BACKUP_STAGING_HOST_PATH:?Set protected backup staging path}:/var/lib/auto-email/backups
+  security:
+    <<: *ops
+    command: [security-contain]
+    secrets: [{ source: worker, target: runtime.json }]
+    volumes: ['${ERASURE_LEDGER_HOST_PATH}:/var/lib/auto-email/erasures']
+
+secrets:
+  web: { file: '${SECRETS_DIRECTORY:?Set secrets directory}/web.json' }
+  worker: { file: '${SECRETS_DIRECTORY}/worker.json' }
+  monitor: { file: '${SECRETS_DIRECTORY}/monitor.json' }
+  migrate: { file: '${SECRETS_DIRECTORY}/migrate.json' }
+  preflight: { file: '${SECRETS_DIRECTORY}/preflight.json' }
+  backup: { file: '${SECRETS_DIRECTORY}/backup.json' }
+  database: { file: '${SECRETS_DIRECTORY}/database.conf' }
+  database_ca: { file: '${SECRETS_DIRECTORY}/database-ca.crt' }
+  backup_password: { file: '${SECRETS_DIRECTORY}/backup-password' }

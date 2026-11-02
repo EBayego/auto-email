@@ -300,7 +300,7 @@ export async function selectPendingEmail(
             ),
           }
         : {}),
-      ...(input.resolveStyle && style ? { styleRevision: style.revision } : {}),
+      ...(style ? { styleRevision: style.revision } : {}),
       ...(style?.exampleMessageIds
         ? { styleExampleMessageIds: [...style.exampleMessageIds] }
         : {}),

@@ -1,3 +1,4 @@
+import { createAuthorizedTestUser } from './fixtures/privacy';
 import {
   afterAll,
   beforeAll,
@@ -70,7 +71,7 @@ describe('MAIL-030 reglas persistentes y clasificador por usuario', () => {
   beforeAll(async () => {
     for (let i = 0; i < 2; i++) {
       const email = `mail030-${crypto.randomUUID()}@example.invalid`;
-      const created = await service.auth.admin.createUser({
+      const created = await createAuthorizedTestUser(service, {
         email,
         password,
         email_confirm: true,

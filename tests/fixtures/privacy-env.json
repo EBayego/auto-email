@@ -1,0 +1,8 @@
+{
+  "PRIVACY_OPERATOR_NAME": "Operador sintético de pruebas",
+  "PRIVACY_CONTACT_EMAIL": "privacy@example.invalid",
+  "PRIVACY_OPERATOR_ADDRESS": "Dirección sintética, solo pruebas locales",
+  "PRIVACY_HOSTING_PROVIDER": "Servidor local de pruebas",
+  "PRIVACY_PROCESSING_DISCLOSURE": "Datos sintéticos en servicios locales. No se contacta con proveedores externos en estas pruebas.",
+  "PRIVACY_REVIEW_APPROVED": "true"
+}

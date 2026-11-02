@@ -1,6 +1,7 @@
 import { DataAccessError, requireResource, requireUuid } from '@/db/errors';
 import type { DataClient, RunOutcome, RunTrigger } from '@/db/models';
 import { createOwnerRepositories } from '@/db/repositories';
+import { assertAccountNotErased } from '@/modules/security/erasure-ledger';
 
 export type OwnedWorkItem = Readonly<{
   userId: string;
@@ -18,6 +19,7 @@ export async function openWorkerDataAccess(
   const repositories = createOwnerRepositories(client, ownerId);
 
   const authorize = async () => {
+    await assertAccountNotErased(ownerId);
     const profile = await repositories.users.get();
     if (!profile || profile.status !== 'ACTIVE')
       throw new DataAccessError('FORBIDDEN');

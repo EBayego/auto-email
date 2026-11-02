@@ -6,6 +6,7 @@ select ok(not has_function_privilege('authenticated',fn,'EXECUTE'),'Solo backend
 from unnest(array['public.request_manual_processing(uuid,uuid)','public.set_gmail_processing_paused(uuid,uuid,boolean)',
  'public.set_automation_settings(uuid,boolean,integer,integer)','public.gmail_execution_allowed(uuid,uuid)','public.daily_draft_usage(uuid)']) fn;
 insert into auth.users(id,aud,role,email) values ('00000000-0000-4000-8000-000000000035','authenticated','authenticated','mail035@example.invalid');
+\ir fixtures/privacy.inc
 insert into public.gmail_accounts(id,user_id,email,status,encrypted_refresh_token,scope_set) values
  ('00000000-0000-4000-8000-000000000235','00000000-0000-4000-8000-000000000035','mail035@example.invalid','CONNECTED','\x0102',
  array['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/gmail.compose']);

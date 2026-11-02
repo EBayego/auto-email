@@ -30,6 +30,31 @@ export class ConfigurationError extends Error {
 }
 
 type Environment = Record<string, string | undefined>;
+const privateVariableNames = [
+  'SUPABASE_SECRET_KEY',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'SUPABASE_ACCESS_TOKEN',
+  'SUPABASE_DB_PASSWORD',
+  'OPENAI_API_KEY',
+  'GOOGLE_CLIENT_SECRET',
+  'GMAIL_TOKEN_ENCRYPTION_KEY',
+  'ERASURE_LEDGER_ENCRYPTION_KEY',
+  'ALERT_WEBHOOK_URL',
+  'ALERT_WEBHOOK_BEARER_TOKEN',
+  'RESTIC_PASSWORD',
+  'AWS_ACCESS_KEY_ID',
+  'AWS_SECRET_ACCESS_KEY',
+  'DATABASE_URL',
+  'PGPASSWORD',
+];
+export function assertNoPublicSecrets(env: Environment = process.env) {
+  const exposed = privateVariableNames
+    .flatMap((name) =>
+      ['NEXT_PUBLIC_', 'EXPO_PUBLIC_'].map((prefix) => `${prefix}${name}`),
+    )
+    .filter((name) => !!env[name]);
+  if (exposed.length) throw new ConfigurationError(exposed);
+}
 export type AuthConfig = {
   appOrigin: string;
   supabaseUrl: string;
@@ -109,7 +134,22 @@ export function readAuthConfig(env: Environment = process.env): AuthConfig {
   };
 }
 
-export function readServerConfig(env: Environment = process.env): ServerConfig {
+type ConfigurationScope = 'worker' | 'web' | 'data';
+export type DataServiceConfig = Pick<
+  ServerConfig,
+  'environment' | 'auth' | 'supabase' | 'timeoutMs'
+>;
+export type WebServerConfig = DataServiceConfig &
+  (
+    | {
+        providerMode: 'live';
+        gmail: Extract<ServerConfig, { providerMode: 'live' }>['gmail'];
+        google: Extract<ServerConfig, { providerMode: 'live' }>['google'];
+      }
+    | { providerMode: 'mock'; google: null }
+  );
+
+function readConfiguration(env: Environment, scope: ConfigurationScope) {
   const failures: string[] = [];
   let auth: AuthConfig | undefined;
   try {
@@ -119,6 +159,11 @@ export function readServerConfig(env: Environment = process.env): ServerConfig {
     else throw error;
   }
   const stage = env.APP_ENV;
+  if (
+    env.SECURITY_MAINTENANCE_MODE !== undefined &&
+    !['true', 'false'].includes(env.SECURITY_MAINTENANCE_MODE)
+  )
+    failures.push('SECURITY_MAINTENANCE_MODE');
   const mode = env.PROVIDER_MODE;
   if (!['development', 'test', 'staging', 'production'].includes(stage ?? ''))
     failures.push('APP_ENV');
@@ -163,20 +208,14 @@ export function readServerConfig(env: Environment = process.env): ServerConfig {
     timeout > 120000
   )
     failures.push('PROVIDER_TIMEOUT_MS');
-  for (const name of [
-    'SUPABASE_SECRET_KEY',
-    'SUPABASE_SERVICE_ROLE_KEY',
-    'OPENAI_API_KEY',
-    'GOOGLE_CLIENT_SECRET',
-    'GMAIL_TOKEN_ENCRYPTION_KEY',
-  ]) {
+  for (const name of privateVariableNames) {
     for (const prefix of ['NEXT_PUBLIC_', 'EXPO_PUBLIC_'])
       if (env[`${prefix}${name}`]) failures.push(`${prefix}${name}`);
   }
 
   const reasoning = env.OPENAI_REASONING_EFFORT;
   const maxOutputTokens = Number(env.OPENAI_MAX_OUTPUT_TOKENS);
-  if (mode === 'live') {
+  if (mode === 'live' && scope !== 'data') {
     if (
       !/^[A-Za-z0-9+/]{43}=$/.test(env.GMAIL_TOKEN_ENCRYPTION_KEY ?? '') ||
       Buffer.from(env.GMAIL_TOKEN_ENCRYPTION_KEY ?? '', 'base64').toString(
@@ -184,29 +223,31 @@ export function readServerConfig(env: Environment = process.env): ServerConfig {
       ) !== env.GMAIL_TOKEN_ENCRYPTION_KEY
     )
       failures.push('GMAIL_TOKEN_ENCRYPTION_KEY');
-    if (
-      !usable(env.OPENAI_API_KEY) ||
-      !/^sk-[A-Za-z0-9_-]+$/.test(env.OPENAI_API_KEY)
-    )
-      failures.push('OPENAI_API_KEY');
-    if (
-      !usable(env.OPENAI_MODEL) ||
-      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(env.OPENAI_MODEL)
-    )
-      failures.push('OPENAI_MODEL');
-    if (
-      !['omit', 'none', 'low', 'medium', 'high', 'xhigh', 'max'].includes(
-        reasoning ?? '',
+    if (scope === 'worker') {
+      if (
+        !usable(env.OPENAI_API_KEY) ||
+        !/^sk-[A-Za-z0-9_-]+$/.test(env.OPENAI_API_KEY)
       )
-    )
-      failures.push('OPENAI_REASONING_EFFORT');
-    if (
-      !/^\d+$/.test(env.OPENAI_MAX_OUTPUT_TOKENS ?? '') ||
-      !Number.isInteger(maxOutputTokens) ||
-      maxOutputTokens < 16 ||
-      maxOutputTokens > 32768
-    )
-      failures.push('OPENAI_MAX_OUTPUT_TOKENS');
+        failures.push('OPENAI_API_KEY');
+      if (
+        !usable(env.OPENAI_MODEL) ||
+        !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(env.OPENAI_MODEL)
+      )
+        failures.push('OPENAI_MODEL');
+      if (
+        !['omit', 'none', 'low', 'medium', 'high', 'xhigh', 'max'].includes(
+          reasoning ?? '',
+        )
+      )
+        failures.push('OPENAI_REASONING_EFFORT');
+      if (
+        !/^\d+$/.test(env.OPENAI_MAX_OUTPUT_TOKENS ?? '') ||
+        !Number.isInteger(maxOutputTokens) ||
+        maxOutputTokens < 16 ||
+        maxOutputTokens > 32768
+      )
+        failures.push('OPENAI_MAX_OUTPUT_TOKENS');
+    }
     if (
       !usable(env.GOOGLE_CLIENT_ID) ||
       !/^[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/.test(
@@ -245,26 +286,50 @@ export function readServerConfig(env: Environment = process.env): ServerConfig {
     },
     timeoutMs: timeout,
   };
-  return mode === 'mock'
-    ? { ...common, providerMode: 'mock', openai: null, google: null }
+  if (scope === 'data') return common;
+  const web =
+    mode === 'mock'
+      ? { ...common, providerMode: 'mock' as const, google: null }
+      : {
+          ...common,
+          providerMode: 'live' as const,
+          gmail: {
+            tokenEncryptionKey: new SecretValue(
+              env.GMAIL_TOKEN_ENCRYPTION_KEY!,
+            ),
+          },
+          google: {
+            clientId: env.GOOGLE_CLIENT_ID!,
+            clientSecret: new SecretValue(env.GOOGLE_CLIENT_SECRET!),
+            redirectUri: env.GOOGLE_REDIRECT_URI!,
+          },
+        };
+  if (scope === 'web') return web;
+  return web.providerMode === 'mock'
+    ? { ...web, openai: null }
     : {
-        ...common,
-        providerMode: 'live',
-        gmail: {
-          tokenEncryptionKey: new SecretValue(env.GMAIL_TOKEN_ENCRYPTION_KEY!),
-        },
+        ...web,
         openai: {
           apiKey: new SecretValue(env.OPENAI_API_KEY!),
           model: env.OPENAI_MODEL!,
           reasoningEffort: reasoning as ReasoningEffort,
           maxOutputTokens,
         },
-        google: {
-          clientId: env.GOOGLE_CLIENT_ID!,
-          clientSecret: new SecretValue(env.GOOGLE_CLIENT_SECRET!),
-          redirectUri: env.GOOGLE_REDIRECT_URI!,
-        },
       };
+}
+export function readServerConfig(env: Environment = process.env): ServerConfig {
+  return readConfiguration(env, 'worker') as ServerConfig;
+}
+export function readWebServerConfig(
+  env: Environment = process.env,
+): WebServerConfig {
+  return readConfiguration(env, 'web') as WebServerConfig;
+}
+export function getWebServerConfig(): WebServerConfig {
+  return readWebServerConfig();
+}
+export function getDataServiceConfig(): DataServiceConfig {
+  return readConfiguration(process.env, 'data') as DataServiceConfig;
 }
 
 export function getServerConfig(): ServerConfig {

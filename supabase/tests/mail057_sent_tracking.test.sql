@@ -1,0 +1,18 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+select no_plan();
+select has_column('public','draft_generations','sent_outcome','El resultado de envío tiene metadatos separados de la escritura');
+select has_column('public','draft_generations','delivery_envelope_hash','Se conserva la huella de destinatarios sin direcciones ni texto');
+select has_index('public','draft_generations','draft_sent_message_idx','Un mensaje enviado solo se asocia a una generación por cuenta');
+select has_index('public','draft_generations','draft_sent_pending_idx','Las comprobaciones pendientes están indexadas');
+select ok(not has_function_privilege('authenticated','public.claim_sent_draft_tracking(integer,integer)','EXECUTE'),'El navegador no adquiere trabajos');
+select ok(not has_function_privilege('anon','public.finish_sent_draft_tracking(uuid,uuid,uuid,uuid,jsonb,text)','EXECUTE'),'No se aceptan asociaciones anónimas');
+select ok(not has_function_privilege('authenticated','public.finish_sent_draft_tracking(uuid,uuid,uuid,uuid,jsonb,text)','EXECUTE'),'El navegador no puede declarar que un borrador se envió');
+select ok(has_function_privilege('service_role','public.claim_sent_draft_tracking(integer,integer)','EXECUTE'),'El worker puede consultar envíos');
+select ok(has_column_privilege('authenticated','public.draft_generations','sent_outcome','SELECT'),'El propietario puede consultar el estado mediante RLS');
+select ok(not has_column_privilege('authenticated','public.draft_generations','delivery_envelope_hash','SELECT'),'La huella del sobre es privada');
+select ok(not has_column_privilege('authenticated','public.draft_generations','draft_internet_message_id','SELECT'),'Las cabeceras de correlación son privadas');
+select ok(not has_column_privilege('authenticated','public.draft_generations','sent_lease_id','SELECT'),'No se exponen leases');
+select ok((select relrowsecurity from pg_class where oid='public.draft_generations'::regclass),'Se mantiene el aislamiento RLS');
+select * from finish();
+rollback;

@@ -4,6 +4,7 @@ import { getGmailOAuthService } from '@/app/_lib/gmail-oauth';
 import { DataAccessError } from '@/db/errors';
 import { GmailOAuthError } from '@/modules/gmail/errors';
 import { gmailOAuthCookie, gmailOnboardingCookie } from '@/modules/gmail/oauth';
+import { gmailRequestOriginMatches } from '../origin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,7 +16,7 @@ const headers = {
 export async function GET(request: NextRequest) {
   try {
     const config = getAuthConfig();
-    if (request.nextUrl.origin !== config.appOrigin)
+    if (!gmailRequestOriginMatches(request, config.appOrigin))
       return NextResponse.json(
         { error: 'INVALID_ORIGIN' },
         { status: 400, headers },

@@ -145,7 +145,7 @@ export async function main(args = process.argv.slice(2)) {
     const runtime = createWorkerRuntime(config);
     const report = await generateContextualStyles({
       gmail: await runtime.gmailFor(work),
-      text: runtime.providers.text,
+      text: runtime.providersFor(work).text,
       manifest,
       mailboxAddress: account.email,
       aliases: options.aliases,
@@ -183,7 +183,7 @@ export async function main(args = process.argv.slice(2)) {
       console.log('Analizando la muestra guardada con OpenAI…');
       result = await generateWritingProfile({
         gmail: await runtime.gmailFor(work),
-        text: runtime.providers.text,
+        text: runtime.providersFor(work).text,
         manifest,
         mailboxAddress: account.email,
         aliases: options.aliases,

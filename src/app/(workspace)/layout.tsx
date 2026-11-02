@@ -67,7 +67,8 @@ export default async function WorkspaceLayout({
         </main>
         <footer className="workspace-footer">
           Las respuestas se revisan y envían desde Gmail. Auto Email solo
-          prepara borradores.
+          prepara borradores.{' '}
+          <Link href="/privacy">Privacidad y condiciones</Link>
         </footer>
       </div>
     </div>

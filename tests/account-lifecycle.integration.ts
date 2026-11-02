@@ -1,3 +1,4 @@
+import { createAuthorizedTestUser } from './fixtures/privacy';
 import { afterAll, beforeAll, describe, it, expect, vi } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
@@ -45,7 +46,7 @@ const cookies = (owner: Owner) =>
 async function createOwner() {
   const email = `mail055-${crypto.randomUUID()}@example.invalid`,
     password = `Test-${crypto.randomUUID()}`;
-  const result = await service.auth.admin.createUser({
+  const result = await createAuthorizedTestUser(service, {
     email,
     password,
     email_confirm: true,

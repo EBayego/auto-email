@@ -1,3 +1,4 @@
+import { createAuthorizedTestUser } from './fixtures/privacy';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
 import { createHash } from 'node:crypto';
@@ -52,7 +53,7 @@ describe('MAIL-036 documentos, Storage y HTTP real', () => {
     for (let i = 0; i < 2; i++) {
       const email = `knowledge-${crypto.randomUUID()}@example.invalid`,
         password = `Test-${crypto.randomUUID()}!`;
-      const created = await service.auth.admin.createUser({
+      const created = await createAuthorizedTestUser(service, {
         email,
         password,
         email_confirm: true,

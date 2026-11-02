@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
+import type { GenerationRecorder } from '@/modules/analytics/generations';
 import { replyRecipientAddresses } from '@/modules/gmail/reply-recipients';
 import {
   applyFactualValidation,
@@ -68,6 +70,7 @@ export type ReplyOrchestrationResult = ReplyGenerationReport & {
   reply: GenerateReplyResult | null;
 };
 export type ReplyOrchestratorDependencies = {
+  generations?: GenerationRecorder;
   factualValidation?: FactualValidationAccess;
   policy?: ResponsePolicyAccess;
   gmail: Pick<GmailClient, 'getThread'>;
@@ -103,6 +106,9 @@ export function createReplyOrchestrator(
             return;
           let examples: StyleExample[] = [];
           let knowledge: KnowledgeRetrievalResult | undefined;
+          const startedAt = performance.now();
+          const generationId = randomUUID();
+          let recorded = false;
           try {
             const snapshot = await deps.policy?.load(context);
             const engine = createResponsePolicyEngine(snapshot?.settings);
@@ -253,6 +259,19 @@ export function createReplyOrchestrator(
             // Permission/configuration revisions come from the resolver, never
             // from the model or source content, and stay outside both prompts.
             response.knowledgeRevision = knowledge?.plan.revision;
+            if (deps.generations) {
+              recorded = true;
+              await deps.generations.record({
+                id: generationId,
+                context,
+                response,
+                knowledge,
+                durationMs: performance.now() - startedAt,
+                userInstructions: input.userInstructions,
+                policySettings: snapshot?.settings,
+              });
+              response.generationRunId = generationId;
+            }
             reply = response;
             generation = {
               status: response.status,
@@ -274,6 +293,17 @@ export function createReplyOrchestrator(
               needsHumanInput: response.needsHumanInput ?? false,
             };
             if (input.consume) await input.consume(response, context);
+          } catch (error) {
+            if (deps.generations && !recorded)
+              await deps.generations.record({
+                id: generationId,
+                context,
+                response: null,
+                knowledge,
+                durationMs: performance.now() - startedAt,
+                userInstructions: input.userInstructions,
+              });
+            throw error;
           } finally {
             examples.length = 0;
             if (knowledge) knowledge.matches.length = 0;

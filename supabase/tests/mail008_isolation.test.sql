@@ -6,6 +6,7 @@ select no_plan();
 insert into auth.users (id, aud, role, email) values
   ('00000000-0000-4000-8000-000000000081', 'authenticated', 'authenticated', 'mail008-a@example.invalid'),
   ('00000000-0000-4000-8000-000000000082', 'authenticated', 'authenticated', 'mail008-b@example.invalid');
+\ir fixtures/privacy.inc
 insert into public.gmail_accounts (id, user_id, email, encrypted_refresh_token) values
   ('10000000-0000-4000-8000-000000000081', '00000000-0000-4000-8000-000000000081', 'mail008-a@example.invalid', '\x74657374'),
   ('10000000-0000-4000-8000-000000000082', '00000000-0000-4000-8000-000000000082', 'mail008-b@example.invalid', '\x74657374');

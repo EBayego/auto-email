@@ -15,6 +15,7 @@ select ok(not has_table_privilege('authenticated', 'public.gmail_sync_messages',
 insert into auth.users (id, aud, role, email) values
   ('00000000-0000-4000-8000-000000000029', 'authenticated', 'authenticated', 'mail029@example.invalid'),
   ('00000000-0000-4000-8000-000000000129', 'authenticated', 'authenticated', 'mail029-other@example.invalid');
+\ir fixtures/privacy.inc
 insert into public.gmail_accounts (id, user_id, email, status, encrypted_refresh_token, scope_set) values
   ('00000000-0000-4000-8000-000000000229', '00000000-0000-4000-8000-000000000029', 'mail029@example.invalid',
    'CONNECTED', '\x0102', array['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/gmail.compose']);

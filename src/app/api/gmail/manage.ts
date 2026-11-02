@@ -3,6 +3,8 @@ import { getAuthConfig } from '@/modules/auth/config';
 import { getGmailConnection } from '@/app/_lib/gmail-connection';
 import { DataAccessError } from '@/db/errors';
 import { GmailCredentialError } from '@/modules/gmail/credentials';
+import { PrivacyError } from '@/modules/privacy/notice';
+import { gmailRequestOriginMatches } from './origin';
 
 export async function manageGmail(
   request: NextRequest,
@@ -15,7 +17,7 @@ export async function manageGmail(
   try {
     const config = getAuthConfig();
     if (
-      request.nextUrl.origin !== config.appOrigin ||
+      !gmailRequestOriginMatches(request, config.appOrigin) ||
       request.headers.get('origin') !== config.appOrigin ||
       request.headers.get('sec-fetch-site') === 'cross-site'
     )
@@ -54,6 +56,11 @@ export async function manageGmail(
           : 'REVOCATION_FAILED';
       else await connection.client.get('profile');
     } catch (error) {
+      if (error instanceof PrivacyError)
+        return NextResponse.redirect(
+          new URL('/privacy-consent', config.appOrigin),
+          { status: 303, headers },
+        );
       if (
         error instanceof DataAccessError &&
         ['UNAUTHENTICATED', 'FORBIDDEN'].includes(error.code)

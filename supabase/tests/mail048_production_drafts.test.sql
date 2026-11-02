@@ -6,6 +6,7 @@ update public.user_settings set automation_enabled=false;
 insert into auth.users(id,aud,role,email) values
  ('00000000-0000-4000-8000-000000000048','authenticated','authenticated','draft48@example.invalid'),
  ('00000000-0000-4000-8000-000000000148','authenticated','authenticated','foreign48@example.invalid');
+\ir fixtures/privacy.inc
 insert into public.gmail_accounts(id,user_id,email,status,encrypted_refresh_token,scope_set) values
  ('10000000-0000-4000-8000-000000000048','00000000-0000-4000-8000-000000000048','draft48@example.invalid','CONNECTED','\x0102',array['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/gmail.compose']);
 update public.user_settings set automation_enabled=true where user_id='00000000-0000-4000-8000-000000000048';

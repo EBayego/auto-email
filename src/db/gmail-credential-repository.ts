@@ -8,6 +8,7 @@ import { DataAccessError, requireResource, requireUuid } from './errors';
 import type { DataClient } from './models';
 import type { Tables, TablesUpdate } from './database.types';
 import { createOwnerRepositories } from './repositories';
+import { assertPrivacyAuthorized } from './privacy';
 
 const columns =
   'id,user_id,email,status,scope_set,credential_version,encrypted_refresh_token,encrypted_access_token,access_token_expires_at';
@@ -79,6 +80,7 @@ export function createGmailCredentialRepository(
   };
   const clearLease = { token_lease_id: null, token_lease_expires_at: null };
   return Object.freeze({
+    assertAuthorized: () => assertPrivacyAuthorized(client, userId),
     async get() {
       await authorize();
       const { data, error } = await client

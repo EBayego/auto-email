@@ -10,6 +10,10 @@ import type { Tables } from './database.types';
 import type { ProfileGeneration } from './writing-profiles';
 import { validateCurrentWritingProfile } from '@/modules/identity/writing-profile';
 import { writingPromptVersion } from '@/modules/identity/analyze-writing';
+import {
+  assertPrivacyAuthorized,
+  enforcePrivacyConfiguration,
+} from './privacy';
 
 const publicColumns =
   'consent_revision,consent_version,consented_at,scope,status,scanned,selected,profile_revision,error_code,lease_expires_at,started_at,finished_at';
@@ -56,6 +60,8 @@ export function createUserOnboardingRepository(
       };
     },
     async apply(operation: OnboardingOperation) {
+      if (operation.action === 'start')
+        await assertPrivacyAuthorized(writer, userId);
       const { data, error } =
         operation.action === 'consent'
           ? await writer.rpc('save_onboarding_consent', {
@@ -78,6 +84,7 @@ export type AnalysisJob = Tables<'gmail_onboarding'>;
 export function createOnboardingWorkerStore(client: DataClient) {
   return Object.freeze({
     async claim(): Promise<AnalysisJob | null> {
+      await enforcePrivacyConfiguration(client);
       const { data, error } = await client.rpc('claim_onboarding_analysis');
       failure(error);
       return data?.[0] ?? null;

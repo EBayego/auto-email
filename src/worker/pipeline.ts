@@ -6,6 +6,7 @@ import {
   type EmailJobConfig,
 } from './email-jobs';
 import type { SyncConfig } from './sync-config';
+import { observe } from '@/modules/observability/telemetry';
 
 export async function runMailWorkerCycle(
   sync: SyncDependencies,
@@ -16,14 +17,22 @@ export async function runMailWorkerCycle(
 ) {
   let failed: boolean;
   try {
-    const result = await runSyncCycle(sync, syncConfig, signal);
+    const result = await observe(
+      'SYNC',
+      () => runSyncCycle(sync, syncConfig, signal),
+      { failed: (value) => value.failed > 0 },
+    );
     failed = result.failed > 0;
   } catch (error) {
     sync.report({ type: 'SYNC_CYCLE_FAILED', errorCode: syncErrorCode(error) });
     failed = true;
   }
   try {
-    const result = await runEmailJobCycle(jobs, jobConfig, signal);
+    const result = await observe(
+      'JOBS',
+      () => runEmailJobCycle(jobs, jobConfig, signal),
+      { failed: (value) => value.failed > 0 },
+    );
     failed = result.failed > 0 || failed;
   } catch (error) {
     jobs.report({

@@ -1,10 +1,26 @@
-import type { ServerConfig } from '@/config/env';
+import type { ServerConfig, WebServerConfig } from '@/config/env';
 import { ConfigurationError } from '@/config/env';
 import type { ProviderClients } from './contracts';
 import { createOpenAiClient } from './openai';
 import { createGoogleAuthorizationClient } from './google';
 import { createGmailClient } from './gmail';
 import type { ProviderRequestExecutor } from './request-policy';
+
+export function createGmailProviderClients(
+  config: WebServerConfig,
+  execute?: ProviderRequestExecutor,
+): Pick<ProviderClients, 'googleAuthorization' | 'gmail'> {
+  if (config.providerMode !== 'live')
+    throw new ConfigurationError(['PROVIDER_MODE']);
+  return Object.freeze({
+    googleAuthorization: createGoogleAuthorizationClient(
+      config.google,
+      config.timeoutMs,
+    ),
+    gmail: (getAccessToken) =>
+      createGmailClient(getAccessToken, config.timeoutMs, undefined, execute),
+  });
+}
 
 export function createProviderClients(
   config: ServerConfig,

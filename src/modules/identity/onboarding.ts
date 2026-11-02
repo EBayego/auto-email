@@ -92,6 +92,10 @@ export type OnboardingRecord = {
   finished_at: string | null;
 };
 export const onboardingMessages: Record<string, string> = {
+  PRIVACY_CONSENT_REQUIRED:
+    'Revisa y acepta la información de privacidad desde Ajustes antes de iniciar el análisis.',
+  PRIVACY_CONFIGURATION_REQUIRED:
+    'La información del operador está pendiente de completar y revisar. El análisis de Gmail está bloqueado.',
   CONSENT_REQUIRED:
     'Acepta el consentimiento y guarda el alcance antes de iniciar el análisis.',
   STALE_CONSENT:

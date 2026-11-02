@@ -9,6 +9,7 @@ $$;
 insert into auth.users(id,aud,role,email) values
  ('00000000-0000-4000-8000-000000000037','authenticated','authenticated','mail037@example.invalid'),
  ('00000000-0000-4000-8000-000000000137','authenticated','authenticated','mail037-other@example.invalid');
+\ir fixtures/privacy.inc
 create temporary table doc37 as select * from public.reserve_source_document('00000000-0000-4000-8000-000000000037','tarifas.txt','text/plain',50,repeat('a',64));
 select ok(public.complete_indexed_source_document(user_id,id,'Consulta vigente: 125 euros.',pg_temp.doc_index('Consulta vigente: 125 euros.')),'Carga e índice atómicos') from doc37;
 select is((select count(*) from public.knowledge_chunks),1::bigint,'Persiste fragmento');

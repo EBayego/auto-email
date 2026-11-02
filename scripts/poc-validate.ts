@@ -126,7 +126,7 @@ export async function main(args = process.argv.slice(2)) {
   let completed = 0;
   const report = await validateReplySamples({
     gmail: await runtime.gmailFor(work),
-    text: runtime.providers.text,
+    text: runtime.providersFor(work).text,
     cases: options.cases,
     selection: {
       ...options.selection,

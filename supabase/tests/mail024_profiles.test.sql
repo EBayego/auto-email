@@ -8,6 +8,7 @@ insert into mail024_fixture values ('{"schema_version":2,"language":"es","formal
 insert into auth.users (id, aud, role, email) values
   ('00000000-0000-4000-8000-000000000241', 'authenticated', 'authenticated', 'mail024-a@example.invalid'),
   ('00000000-0000-4000-8000-000000000242', 'authenticated', 'authenticated', 'mail024-b@example.invalid');
+\ir fixtures/privacy.inc
 insert into public.gmail_accounts (id, user_id, email, status, encrypted_refresh_token, scope_set) values
   ('10000000-0000-4000-8000-000000000241', '00000000-0000-4000-8000-000000000241', 'mail024-a@example.invalid', 'CONNECTED', '\x74657374', array['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.compose']),
   ('10000000-0000-4000-8000-000000000242', '00000000-0000-4000-8000-000000000242', 'mail024-b@example.invalid', 'CONNECTED', '\x74657374', array['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.compose']);

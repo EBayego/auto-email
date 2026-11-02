@@ -26,6 +26,7 @@ describe('pruebas obligatorias para cambios de negocio', () => {
   it.each([
     'src/modules/policy/check.test.ts',
     'tests/data-access.integration.ts',
+    'tests/e2e/regression.e2e.ts',
     'supabase/tests/mail008_isolation.test.sql',
   ])('acepta cambios acompañados de %s', (path) => {
     expect(() =>

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getAuthConfig } from '@/modules/auth/config';
 import { getExecutionControls } from '@/app/_lib/execution-controls';
 import { DataAccessError } from '@/db/errors';
+import { PrivacyError } from '@/modules/privacy/notice';
 import { parseExecutionForm } from '@/modules/workflow/execution-controls';
 
 export const dynamic = 'force-dynamic';
@@ -43,6 +44,11 @@ export async function POST(request: NextRequest) {
       { status: 303, headers },
     );
   } catch (error) {
+    if (error instanceof PrivacyError)
+      return NextResponse.redirect(
+        new URL('/privacy-consent', getAuthConfig().appOrigin),
+        { status: 303, headers },
+      );
     const code = error instanceof DataAccessError ? error.code : 'UNAVAILABLE';
     return NextResponse.json(
       { error: code },

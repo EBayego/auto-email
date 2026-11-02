@@ -9,6 +9,8 @@ export default defineConfig({
     fileParallelism: false,
     include: ['tests/**/*.integration.ts'],
     setupFiles: ['tests/setup/integration.ts'],
+    reporters: ['default', 'junit'],
+    outputFile: { junit: 'coverage/integration/junit.xml' },
     clearMocks: true,
     restoreMocks: true,
     unstubEnvs: true,

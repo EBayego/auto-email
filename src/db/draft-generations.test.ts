@@ -15,6 +15,7 @@ const query = {
   select: vi.fn(),
   eq: vi.fn(),
   in: vi.fn(),
+  neq: vi.fn(),
   insert: vi.fn(),
   update: vi.fn(),
   maybeSingle,
@@ -56,6 +57,7 @@ describe('registro de borradores con propietario y reserva persistente', () => {
       query.select,
       query.eq,
       query.in,
+      query.neq,
       query.insert,
       query.update,
     ])
@@ -98,6 +100,26 @@ describe('registro de borradores con propietario y reserva persistente', () => {
     await expect(
       repo().beginWrite(row().id, 'thread21', 'target21'),
     ).rejects.toMatchObject({ code: 'UNAVAILABLE', message: 'UNAVAILABLE' });
+  });
+  it('mantiene el bloqueo de duplicados después de purgar el historial detallado', async () => {
+    maybeSingle.mockResolvedValue({ data: null, error: null });
+    rpc.mockResolvedValue({
+      data: [{ id: row().id, thread_id: 'thread21', sent: true }],
+      error: null,
+    });
+    expect(await repo().find('target21')).toMatchObject({
+      id: row().id,
+      status: 'UNCERTAIN',
+      sent: true,
+      draftId: null,
+    });
+    expect(rpc).toHaveBeenCalledWith('find_archived_draft', {
+      p_user_id: profileWork.userId,
+      p_account_id: profileWork.gmailAccountId,
+      p_target_message_id: 'target21',
+    });
+    rpc.mockResolvedValue({ data: [], error: null });
+    expect(await repo().find('target21')).toBeNull();
   });
   it('reserva con INSERT y guarda únicamente IDs, versiones y métricas', async () => {
     const input = {

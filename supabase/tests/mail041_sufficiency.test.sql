@@ -4,6 +4,7 @@ select plan(11);
 insert into auth.users(id,aud,role,email) values
  ('00000000-0000-4000-8000-000000000041','authenticated','authenticated','sufficiency41@example.invalid'),
  ('00000000-0000-4000-8000-000000000141','authenticated','authenticated','foreign41@example.invalid');
+\ir fixtures/privacy.inc
 create temporary table snapshot41 as select public.get_knowledge_source_configuration('00000000-0000-4000-8000-000000000041')->>'revision' as revision;
 select is((select allow_partial_knowledge_drafts from public.user_settings where user_id='00000000-0000-4000-8000-000000000041'),false,'Parciales desactivadas por defecto');
 select is((public.get_knowledge_source_configuration('00000000-0000-4000-8000-000000000041')->>'allowPartialDrafts')::boolean,false,'La configuración expone el valor seguro');

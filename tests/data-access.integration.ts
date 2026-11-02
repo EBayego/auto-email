@@ -1,3 +1,4 @@
+import { createAuthorizedTestUser } from './fixtures/privacy';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
 import type { CookieOptions } from '@supabase/ssr';
@@ -40,7 +41,7 @@ describe('MAIL-008 con Supabase real y dos usuarios', () => {
     });
     for (let i = 0; i < 2; i++) {
       const email = `mail008-${crypto.randomUUID()}@example.invalid`;
-      const result = await service.auth.admin.createUser({
+      const result = await createAuthorizedTestUser(service, {
         email,
         password,
         email_confirm: true,
@@ -204,7 +205,13 @@ describe('MAIL-008 con Supabase real y dos usuarios', () => {
       gmailAccountId: owners[0].accountId,
     });
     expect((await data.getSettings()).user_id).toBe(owners[0].id);
-    expect(runtime.providers).toBe(mocks);
+    expect(Object.hasOwn(runtime, 'providers')).toBe(false);
+    expect(
+      runtime.providersFor({
+        userId: owners[0].id,
+        gmailAccountId: owners[0].accountId,
+      }),
+    ).toBe(mocks);
     await expect(
       runtime.dataFor({
         userId: owners[0].id,

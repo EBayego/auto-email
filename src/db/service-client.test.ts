@@ -22,6 +22,7 @@ describe('cliente privilegiado de Supabase', () => {
     const headers = new Headers(fetcher.mock.calls[0][1]?.headers);
     expect(headers.get('apikey')).toBe('sb_secret_private_unit');
     expect(fetcher.mock.calls[0][1]?.cache).toBe('no-store');
+    expect(fetcher.mock.calls[0][1]?.redirect).toBe('error');
     expect((await client.auth.getSession()).data.session).toBeNull();
   });
 });

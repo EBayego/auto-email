@@ -20,7 +20,7 @@ import {
   type PreparedReplyContext,
 } from './manual-selection';
 import { buildReplyMime } from './reply-mime';
-import { draftFingerprint } from './draft-intent';
+import { draftEnvelopeFingerprint, draftFingerprint } from './draft-intent';
 import {
   replyRecipientAddresses,
   sameReplyRecipients,
@@ -152,6 +152,12 @@ export function createDraftWriter(input: {
       });
       const expected = fingerprint(context);
       const reservation = await input.store.reserve({
+        envelopeHash: draftEnvelopeFingerprint({
+          from: [{ name: '', address: selection.mailboxAddress }],
+          to: mime.to,
+          cc: mime.cc,
+        }),
+        generationRunId: response.generationRunId,
         id: attemptId,
         threadId: context.threadId,
         targetMessageId: context.targetMessageId,
@@ -336,7 +342,7 @@ export function createDraftWriter(input: {
             saved.bodyText !== normalizeEmailText(response.bodyText!)
           )
             return result;
-          await input.store.verified(attemptId);
+          await input.store.verified(attemptId, saved.internetMessageId);
           result = {
             status: 'CREATED',
             attemptId,

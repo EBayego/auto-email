@@ -4,7 +4,7 @@ import { openUserDataAccess } from './user-data';
 import { createServiceDataClient } from './service-client';
 import { createStyleEditorRepository } from './style-editor';
 import { StyleEditorError } from '@/modules/identity/style-editor';
-import { getServerConfig } from '@/config/env';
+import { getDataServiceConfig } from '@/config/env';
 
 export async function openUserStyleEditor(client: DataClient) {
   const data = await openUserDataAccess(client);
@@ -13,7 +13,7 @@ export async function openUserStyleEditor(client: DataClient) {
     throw new StyleEditorError('NOT_CONNECTED');
   return createStyleEditorRepository(
     client,
-    createServiceDataClient(getServerConfig()),
+    createServiceDataClient(getDataServiceConfig()),
     data.user.id,
     gmail.id,
   );

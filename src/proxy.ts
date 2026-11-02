@@ -11,6 +11,7 @@ function createPrivateResponse(request: NextRequest) {
 
 export async function proxy(request: NextRequest) {
   let response = createPrivateResponse(request);
+  if (request.nextUrl.pathname.startsWith('/api/health/')) return response;
 
   if (!isAuthConfigured()) return response;
 
@@ -47,10 +48,12 @@ export const config = {
     '/dashboard/:path*',
     '/onboarding/:path*',
     '/settings/:path*',
+    '/privacy-consent',
     '/account-deletion',
     '/style/:path*',
     '/knowledge/:path*',
     '/activity/:path*',
+    '/analytics/:path*',
     '/api/:path*',
     '/login',
     '/register',

@@ -1,11 +1,17 @@
 import nextEnvironment from '@next/env';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
-import { ConfigurationError, readServerConfig } from '../src/config/env.ts';
+import { readObservabilityConfig } from '../src/modules/observability/config.ts';
+import {
+  ConfigurationError,
+  readServerConfig,
+  readWebServerConfig,
+} from '../src/config/env.ts';
 const { loadEnvConfig } = nextEnvironment;
 
 export function validateEnvironment(
   development = process.env.NODE_ENV !== 'production',
+  scope = 'worker',
 ) {
   loadEnvConfig(process.cwd(), development, {
     info() {},
@@ -13,7 +19,8 @@ export function validateEnvironment(
       throw new Error('ENV_FILE');
     },
   });
-  return readServerConfig();
+  readObservabilityConfig();
+  return scope === 'web' ? readWebServerConfig() : readServerConfig();
 }
 
 if (

@@ -95,7 +95,7 @@ export function OnboardingFlow({
         setConsented(false);
         if (needsOAuth)
           window.location.assign(
-            new URL('/api/gmail/connect?onboarding=1', window.location.origin)
+            new URL('/privacy-consent?onboarding=1', window.location.origin)
               .href,
           );
       }
@@ -314,7 +314,7 @@ export function OnboardingFlow({
         {record &&
           !dirty &&
           (needsOAuth || record.error_code === 'REAUTH_REQUIRED') && (
-            <a className="button" href="/api/gmail/connect?onboarding=1">
+            <a className="button" href="/privacy-consent?onboarding=1">
               {gmail ? 'Volver a conectar Gmail' : 'Conectar Gmail'}
             </a>
           )}

@@ -1,3 +1,4 @@
+import { createAuthorizedTestUser } from './fixtures/privacy';
 import {
   afterAll,
   beforeAll,
@@ -22,8 +23,17 @@ import { createEmailJobDraftWriter } from '@/worker/email-drafts';
 import { runDraftReconciliation } from '@/worker/draft-reconciliation';
 import { checkAccountEmailIntervention } from '@/worker/email-intervention';
 import { createResponseGenerator } from '@/modules/response/generator';
+import { createGenerationRecorder } from '@/db/generation-runs';
 import { ProviderError } from '@/providers/errors';
-import type { GmailMessage, GmailClient } from '@/providers/contracts';
+import { createOpenAiClient } from '@/providers/openai';
+import { createProviderRequestExecutor } from '@/providers/request-policy';
+import { readRequestPolicyConfig } from '@/worker/request-config';
+import { SecretValue } from '@/config/env';
+import type {
+  GmailMessage,
+  GmailClient,
+  TextGenerationClient,
+} from '@/providers/contracts';
 import { draftFixture } from './fixtures/drafts';
 import type { EmailClassification } from '@/modules/classifier/contracts';
 import { readEmailBody } from '@/modules/gmail/email-body';
@@ -80,6 +90,7 @@ function fixture(
     attempts?: number;
     wrongAmount?: boolean;
     beforeWrite?: () => Promise<void>;
+    textClient?: TextGenerationClient;
   } = {},
 ) {
   const f = draftFixture();
@@ -205,7 +216,7 @@ function fixture(
     }));
   const orchestration = {
     gmail,
-    generator: createResponseGenerator(f.text),
+    generator: createResponseGenerator(options.textClient ?? f.text),
     styleExamples: {
       retrieve: vi
         .fn()
@@ -263,7 +274,15 @@ function fixture(
         store,
         model: f.model,
         assertLease: control.assertLease,
-        orchestration,
+        orchestration: {
+          ...orchestration,
+          generations: createGenerationRecorder(
+            service,
+            { userId, gmailAccountId: accountId, emailJobId: job.id },
+            { id: f.model },
+            { inputUsdPerMillion: 1.5, outputUsdPerMillion: 6 },
+          ),
+        },
         writer: createEmailJobDraftWriter({
           client: proxy,
           gmail,
@@ -278,7 +297,15 @@ function fixture(
       store,
       model: f.model,
       assertLease: control.assertLease,
-      orchestration,
+      orchestration: {
+        ...orchestration,
+        generations: createGenerationRecorder(
+          service,
+          { userId, gmailAccountId: accountId, emailJobId: job.id },
+          { id: f.model },
+          { inputUsdPerMillion: 1.5, outputUsdPerMillion: 6 },
+        ),
+      },
       writer,
     });
   };
@@ -368,7 +395,7 @@ async function jobRow() {
 describe('MAIL-048 worker y reconciliación con Supabase real', () => {
   beforeAll(async () => {
     email = `draft48-${crypto.randomUUID()}@example.invalid`;
-    const created = await service.auth.admin.createUser({
+    const created = await createAuthorizedTestUser(service, {
       email,
       password,
       email_confirm: true,
@@ -832,6 +859,155 @@ describe('MAIL-048 worker y reconciliación con Supabase real', () => {
     expect((await jobRow()).status).toBe('DRAFT_CREATED');
     expect(f.gmail.createDraft).toHaveBeenCalledOnce();
   });
+  function sdkFixture(status?: number) {
+    let elapsed = 0,
+      calls = 0;
+    const bodies: Record<string, unknown>[] = [];
+    const gate = {
+      acquire: vi.fn(async () => ({
+        leaseId: crypto.randomUUID(),
+        retryAfterMs: 0,
+      })),
+      release: vi.fn(async () => {}),
+      cooldown: vi.fn(async () => {}),
+    };
+    const execute = createProviderRequestExecutor({
+      gate,
+      config: { ...readRequestPolicyConfig({}), maxAttempts: 3 },
+      now: () => elapsed,
+      random: () => 0,
+      pause: async (ms) => {
+        elapsed += ms;
+      },
+    });
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+      calls++;
+      const payload = JSON.parse(String(init?.body));
+      bodies.push(payload);
+      if (status || calls === 1)
+        return Response.json(
+          {
+            error: {
+              message: 'private-model-failure',
+              type: status === 429 ? 'insufficient_quota' : 'server_error',
+              code: status === 429 ? 'insufficient_quota' : null,
+            },
+          },
+          { status: status ?? 503 },
+        );
+      return Response.json({
+        id: `resp_mail064_${calls}`,
+        object: 'response',
+        status: 'completed',
+        output: [
+          {
+            id: `message64_${calls}`,
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [
+              {
+                type: 'output_text',
+                text: JSON.stringify(
+                  payload.text.format.name === 'response_verification_v1'
+                    ? supportedResponse()
+                    : readyResponse(),
+                ),
+                annotations: [],
+              },
+            ],
+          },
+        ],
+        usage: { input_tokens: 20, output_tokens: 10 },
+      });
+    });
+    const text = createOpenAiClient(
+      {
+        apiKey: new SecretValue('sk-mail064-synthetic'),
+        model: 'test-model',
+        reasoningEffort: 'none',
+        maxOutputTokens: 2048,
+      },
+      30000,
+      fetcher,
+      execute,
+    );
+    return { text, fetcher, gate, bodies };
+  }
+  it('MAIL-064 integra el SDK simulado, un reintento HTTP, verificación independiente y una única escritura persistida', async () => {
+    const sdk = sdkFixture(),
+      f = fixture('success', { textClient: sdk.text });
+    await f.seed();
+    const outcome = await runEmailJobCycle(f.deps, {
+      leaseSeconds: 300,
+      maxJobsPerCycle: 2,
+    });
+    expect(outcome.draftsCreated).toBe(1);
+    expect(sdk.fetcher).toHaveBeenCalledTimes(3);
+    expect(sdk.gate.release).toHaveBeenCalledTimes(3);
+    expect(
+      sdk.bodies.every(
+        (body) =>
+          body.store === false &&
+          body.background === false &&
+          body.tool_choice === 'none' &&
+          !body.tools,
+      ),
+    ).toBe(true);
+    const job = await jobRow();
+    const run = await service
+      .from('generation_runs')
+      .select('status,model_calls,input_tokens,output_tokens')
+      .eq('email_job_id', job.id)
+      .single();
+    expect(run.error).toBeNull();
+    expect(run.data).toMatchObject({
+      status: 'READY',
+      model_calls: 3,
+      input_tokens: 40,
+      output_tokens: 20,
+    });
+    expect((await row()).email_job_id).toBe(job.id);
+    await runEmailJobCycle(f.deps, { leaseSeconds: 300, maxJobsPerCycle: 2 });
+    expect(f.posted).toHaveBeenCalledTimes(1);
+    expect(sdk.fetcher).toHaveBeenCalledTimes(3);
+  });
+  it.each([
+    [401, 1],
+    [429, 1],
+    [503, 3],
+  ])(
+    'MAIL-064 acota los reintentos del SDK ante HTTP %i y no crea ningún borrador',
+    async (status, expectedCalls) => {
+      const sdk = sdkFixture(status),
+        f = fixture('success', { textClient: sdk.text });
+      await f.seed();
+      await runEmailJobCycle(f.deps, { leaseSeconds: 300, maxJobsPerCycle: 2 });
+      expect(sdk.fetcher).toHaveBeenCalledTimes(expectedCalls);
+      expect(f.posted).not.toHaveBeenCalled();
+      expect(f.gmail.createDraft).not.toHaveBeenCalled();
+      const job = await jobRow();
+      expect(job.status).not.toBe('DRAFT_CREATED');
+      expect(
+        (
+          await service
+            .from('draft_generations')
+            .select('id')
+            .eq('email_job_id', job.id)
+        ).data,
+      ).toEqual([]);
+      const run = await service
+        .from('generation_runs')
+        .select('status')
+        .eq('email_job_id', job.id)
+        .single();
+      expect(run.error).toBeNull();
+      expect(run.data?.status).toBe('FAILED');
+      expect(JSON.stringify(f.report.mock.calls)).not.toContain(
+        'private-model-failure',
+      );
+    },
+  );
   it('un borrador editado conserva su draftId aunque cambie messageId y no se toca', async () => {
     const f = fixture('lostResponse');
     await f.seed();

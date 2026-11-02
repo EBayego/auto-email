@@ -1,4 +1,5 @@
 import type { DataClient } from './models';
+import { observe } from '@/modules/observability/telemetry';
 import { DataAccessError, requireUuid } from './errors';
 import {
   sourceContextSchema,
@@ -91,7 +92,8 @@ export function createKnowledgeSources(client: DataClient, userId: string) {
   });
   return Object.freeze({
     list,
-    retrieve: retriever.retrieve,
+    retrieve: (input: Parameters<typeof retriever.retrieve>[0]) =>
+      observe('KNOWLEDGE', () => retriever.retrieve(input)),
     async mutate(input: SourceOperation) {
       const parsed = sourceOperationSchema.safeParse(input);
       if (!parsed.success) throw new DataAccessError('INVALID_INPUT');

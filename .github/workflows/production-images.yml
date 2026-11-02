@@ -1,0 +1,102 @@
+name: Preparar imágenes de producción
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: SHA completo del commit revisado (40 caracteres)
+        required: true
+        type: string
+      publish:
+        description: Publicar imágenes privadas en GHCR tras superar todas las pruebas
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-images
+  cancel-in-progress: false
+
+env:
+  CI: 'true'
+  DO_NOT_TRACK: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  images:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: production-release
+    permissions:
+      contents: read
+      packages: write
+    env:
+      SOURCE_COMMIT: ${{ inputs.commit }}
+    steps:
+      - name: Exigir una revisión inmutable
+        run: '[[ "$SOURCE_COMMIT" =~ ^[a-f0-9]{40}$ ]]'
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm install --global npm@11.17.0
+      - run: npm ci
+      - run: npm run check
+      - run: npm run db:start -- --exclude studio,postgres-meta > /dev/null
+      - run: npm run db:check
+      - run: npm run test:integration
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run test:deployment
+
+      - name: Autenticarse en GHCR
+        if: inputs.publish
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Publicar exactamente las imágenes probadas
+        if: inputs.publish
+        run: |
+          repository="${GITHUB_REPOSITORY,,}"
+          app="ghcr.io/${repository}-app:${SOURCE_COMMIT}"
+          ops="ghcr.io/${repository}-ops:${SOURCE_COMMIT}"
+          docker tag auto-email:mail067-app "$app"
+          docker tag auto-email:mail067-ops "$ops"
+          docker push "$app"
+          docker push "$ops"
+          export APP_IMAGE="$(docker image inspect --format '{{index .RepoDigests 0}}' "$app")"
+          export OPS_IMAGE="$(docker image inspect --format '{{index .RepoDigests 0}}' "$ops")"
+          node --input-type=module -e 'import fs from "node:fs"; fs.mkdirSync(".cache",{recursive:true}); fs.writeFileSync(".cache/production-release.json",JSON.stringify({version:1,commit:process.env.SOURCE_COMMIT,appImage:process.env.APP_IMAGE,opsImage:process.env.OPS_IMAGE},null,2));'
+
+      - name: Guardar referencias y pruebas
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: production-release
+          path: |
+            .cache/production-release.json
+            coverage/deployment-report.json
+            coverage/unit/junit.xml
+            coverage/integration/junit.xml
+            coverage/e2e/junit.xml
+          include-hidden-files: true
+          retention-days: 7
+
+      - name: Cerrar sesión del registro
+        if: always() && inputs.publish
+        run: docker logout ghcr.io
+
+      - name: Detener la base local de pruebas
+        if: always()
+        run: npm run db:stop

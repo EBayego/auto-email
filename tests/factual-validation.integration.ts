@@ -1,3 +1,4 @@
+import { createAuthorizedTestUser } from './fixtures/privacy';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/db/database.types';
@@ -132,7 +133,7 @@ describe('MAIL-046 validación factual, destinatarios y persistencia real', () =
     for (let i = 0; i < 2; i++) {
       const email = `factual46-${crypto.randomUUID()}@example.invalid`,
         password = `Factual46-${crypto.randomUUID()}!`;
-      const user = await service.auth.admin.createUser({
+      const user = await createAuthorizedTestUser(service, {
         email,
         password,
         email_confirm: true,

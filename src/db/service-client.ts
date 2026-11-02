@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
-import type { ServerConfig } from '@/config/env';
+import type { DataServiceConfig } from '@/config/env';
 import type { Database } from './database.types';
 
 export function createServiceDataClient(
-  config: ServerConfig,
+  config: DataServiceConfig,
   fetcher: typeof fetch = fetch,
 ) {
   return createClient<Database>(
@@ -20,6 +20,7 @@ export function createServiceDataClient(
           fetcher(input, {
             ...init,
             cache: 'no-store',
+            redirect: 'error',
             signal: init?.signal ?? AbortSignal.timeout(config.timeoutMs),
           }),
       },

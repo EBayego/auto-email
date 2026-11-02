@@ -1,3 +1,4 @@
+import { createAuthorizedTestUser } from './fixtures/privacy';
 import {
   afterAll,
   beforeAll,
@@ -113,7 +114,7 @@ describe('MAIL-053 configuración web aplicada por el worker', () => {
     for (let index = 0; index < 2; index++) {
       const email = `mail053-${crypto.randomUUID()}@example.invalid`,
         password = `Test-${crypto.randomUUID()}`;
-      const result = await service.auth.admin.createUser({
+      const result = await createAuthorizedTestUser(service, {
         email,
         password,
         email_confirm: true,

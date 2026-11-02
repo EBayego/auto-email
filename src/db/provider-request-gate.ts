@@ -3,6 +3,7 @@ import { DataAccessError, requireUuid } from './errors';
 import type { OwnedWorkItem } from '@/worker/data-access';
 import type { ProviderRequestGate } from '@/providers/request-policy';
 import { assertExecutionAllowed } from './execution-controls';
+import { assertPrivacyAuthorized } from './privacy';
 
 export function createProviderRequestGate(
   client: DataClient,
@@ -18,6 +19,7 @@ export function createProviderRequestGate(
     : {};
   return Object.freeze<ProviderRequestGate>({
     async acquire(provider, limits, leaseSeconds) {
+      if (work) await assertPrivacyAuthorized(client, work.userId);
       if (requireExecution && work) await assertExecutionAllowed(client, work);
       const { data, error } = await client.rpc('acquire_provider_request', {
         ...scope,
@@ -37,11 +39,12 @@ export function createProviderRequestGate(
       )
         throw new DataAccessError('UNAVAILABLE');
       if (data[0].lease_id) requireUuid(data[0].lease_id);
-      if (data[0].lease_id && requireExecution && work) {
+      if (data[0].lease_id && work) {
         try {
           // Acquiring the shared permit can wait on another transaction. Its
           // original authorization may have changed during that wait.
-          await assertExecutionAllowed(client, work);
+          await assertPrivacyAuthorized(client, work.userId);
+          if (requireExecution) await assertExecutionAllowed(client, work);
         } catch (error) {
           try {
             await client.rpc('release_provider_request', {

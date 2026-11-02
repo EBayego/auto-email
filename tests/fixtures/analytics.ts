@@ -1,0 +1,75 @@
+import type {
+  AnalyticsSnapshot,
+  AnalyticsTotals,
+} from '@/modules/analytics/dashboard';
+export function emptyAnalyticsTotals(): AnalyticsTotals {
+  return {
+    generationAttempts: 0,
+    generationFailures: 0,
+    usageKnownGenerations: 0,
+    usageUnknownGenerations: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    modelCalls: 0,
+    pricedGenerations: 0,
+    unpricedGenerations: 0,
+    knownCostUsd: null,
+    meanKnownCostUsd: null,
+    meanDurationMs: null,
+    draftAttempts: 0,
+    draftsCreated: 0,
+    sendsConfirmed: 0,
+    independentReplies: 0,
+    discardedBeforeWrite: 0,
+    indeterminate: 0,
+    pending: 0,
+    compared: 0,
+    edited: 0,
+    unchanged: 0,
+    factualReview: 0,
+    contentReview: 0,
+    comparisonSkipped: 0,
+    comparisonPending: 0,
+    totalEditDistance: 0,
+    meanSimilarity: null,
+    jobTotal: 0,
+    skippedJobs: 0,
+    reviewJobs: 0,
+    failedJobs: 0,
+    classificationInputTokens: 0,
+    classificationOutputTokens: 0,
+  };
+}
+export function analyticsFixture(): AnalyticsSnapshot {
+  return {
+    version: 'mail060-v1',
+    timezone: 'Europe/Madrid',
+    observedAt: '2026-10-31T12:00:00Z',
+    days: 7,
+    current: {
+      from: '2026-10-24T22:00:00Z',
+      to: '2026-10-31T12:00:00Z',
+      totals: emptyAnalyticsTotals(),
+    },
+    previous: {
+      from: '2026-10-18T08:00:00Z',
+      to: '2026-10-24T22:00:00Z',
+      totals: emptyAnalyticsTotals(),
+    },
+    daily: [
+      {
+        day: '2026-10-25',
+        generationAttempts: 0,
+        draftsCreated: 0,
+        sendsConfirmed: 0,
+        compared: 0,
+        edited: 0,
+        knownCostUsd: null,
+      },
+    ],
+    omissionReasons: [],
+    omissionOther: 0,
+    reviewReasons: [],
+    reviewOther: 0,
+  };
+}

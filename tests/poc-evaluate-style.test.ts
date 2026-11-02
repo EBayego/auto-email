@@ -41,7 +41,7 @@ vi.mock('@/db/style-preferences', () => ({
 vi.mock('@/worker/runtime', () => ({
   createWorkerRuntime: vi.fn(() => ({
     gmailFor: mocks.gmailFor,
-    providers: { text: { generate: vi.fn() } },
+    providersFor: () => ({ text: { generate: vi.fn() } }),
   })),
 }));
 vi.mock('@/poc/sent-sample-store', () => ({

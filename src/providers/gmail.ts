@@ -7,6 +7,7 @@ import type {
   GmailDraftGuard,
 } from './contracts';
 import { ProviderError, providerFailure } from './errors';
+import { observe } from '@/modules/observability/telemetry';
 import { normalizeGmailQuery, withMessageQueries } from './gmail-messages';
 import {
   directProviderRequest,
@@ -92,31 +93,33 @@ export function createGmailClient(
       async (remainingMs) => {
         // Guard errors mean no HTTP write was attempted. Preserve them intact.
         await guard?.beforeRequest();
-        try {
-          const response = await fetcher(url, {
-            method,
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: 'application/json',
-              ...(body ? { 'Content-Type': 'application/json' } : {}),
-            },
-            ...(body ? { body: JSON.stringify(body) } : {}),
-            signal: AbortSignal.timeout(
-              Math.max(1, Math.min(timeoutMs, remainingMs ?? timeoutMs)),
-            ),
-            cache: 'no-store',
-            redirect: 'error',
-          });
-          if (!response.ok) throw await gmailFailure(response);
+        return observe('GMAIL', async () => {
           try {
-            return await response.json();
-          } catch {
-            throw new ProviderError('google', 'INVALID_RESPONSE');
+            const response = await fetcher(url, {
+              method,
+              headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: 'application/json',
+                ...(body ? { 'Content-Type': 'application/json' } : {}),
+              },
+              ...(body ? { body: JSON.stringify(body) } : {}),
+              signal: AbortSignal.timeout(
+                Math.max(1, Math.min(timeoutMs, remainingMs ?? timeoutMs)),
+              ),
+              cache: 'no-store',
+              redirect: 'error',
+            });
+            if (!response.ok) throw await gmailFailure(response);
+            try {
+              return await response.json();
+            } catch {
+              throw new ProviderError('google', 'INVALID_RESPONSE');
+            }
+          } catch (error) {
+            if (error instanceof ProviderError) throw error;
+            throw providerFailure('google');
           }
-        } catch (error) {
-          if (error instanceof ProviderError) throw error;
-          throw providerFailure('google');
-        }
+        });
       },
       guard?.prepare,
     );

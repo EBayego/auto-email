@@ -1,3 +1,4 @@
+import { createAuthorizedTestUser } from './fixtures/privacy';
 import {
   afterAll,
   beforeAll,
@@ -51,7 +52,7 @@ describe('MAIL-013 con base real y workers sin sesión de navegador', () => {
       throw new Error('Solo base temporal local.');
     for (let i = 0; i < 2; i++) {
       const email = `mail013-${crypto.randomUUID()}@example.invalid`;
-      const user = await service.auth.admin.createUser({
+      const user = await createAuthorizedTestUser(service, {
         email,
         password: `Test-${crypto.randomUUID()}`,
         email_confirm: true,

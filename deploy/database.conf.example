@@ -1,0 +1,9 @@
+[auto_email_backup]
+host=REPLACE_WITH_SESSION_POOLER_HOST
+port=5432
+dbname=postgres
+user=postgres.zbcexekelujsqkkynsog
+password=REPLACE_IN_PROTECTED_FILE
+sslmode=verify-full
+sslrootcert=/run/secrets/database-ca.crt
+connect_timeout=15

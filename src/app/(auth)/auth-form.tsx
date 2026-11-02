@@ -72,6 +72,9 @@ export function AuthForm({
           {registering ? 'Inicia sesión' : 'Crea una cuenta'}
         </Link>
       </p>
+      <p className="field-help">
+        <Link href="/privacy">Privacidad y condiciones de uso</Link>
+      </p>
     </>
   );
 }

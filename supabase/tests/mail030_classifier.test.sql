@@ -21,6 +21,7 @@ select ok(has_column_privilege('authenticated','public.user_settings','classifie
 select ok(not has_column_privilege('authenticated','public.user_settings','classifier_excluded_domains','UPDATE'), 'El navegador no modifica reglas directamente');
 
 insert into auth.users(id,aud,role,email) values ('00000000-0000-4000-8000-000000000030','authenticated','authenticated','mail030@example.invalid');
+\ir fixtures/privacy.inc
 select is((select cardinality(classifier_excluded_domains) from public.user_settings where user_id='00000000-0000-4000-8000-000000000030'),0,'Sin exclusiones por defecto');
 select throws_ok($q$update public.user_settings set classifier_excluded_domains=array['*.invalid'] where user_id='00000000-0000-4000-8000-000000000030'$q$,
   '23514',null::text,'La restricción protege también escrituras SQL');

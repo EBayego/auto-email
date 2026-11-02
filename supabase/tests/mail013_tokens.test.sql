@@ -3,6 +3,7 @@ create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
 select no_plan();
 insert into auth.users(id,aud,role,email) values ('00000000-0000-4000-8000-000000000013','authenticated','authenticated','mail013@example.invalid');
+\ir fixtures/privacy.inc
 insert into public.gmail_accounts(user_id,email) values ('00000000-0000-4000-8000-000000000013','mail013@example.invalid');
 select ok((select credential_version is not null from public.gmail_accounts where user_id='00000000-0000-4000-8000-000000000013'),'Cada cuenta tiene una versión de credenciales');
 set local role authenticated;

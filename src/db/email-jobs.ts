@@ -10,6 +10,7 @@ import {
 } from '@/modules/workflow/email-job';
 import type { EmailJob, EmailJobStore } from '@/worker/email-jobs';
 import type { OwnedWorkItem } from '@/worker/data-access';
+import { enforcePrivacyConfiguration } from './privacy';
 
 async function checked<T>(
   query: PromiseLike<{ data: T | null; error: unknown }>,
@@ -63,6 +64,7 @@ function parameters(job: EmailJob) {
 export function createEmailJobStore(client: DataClient) {
   return Object.freeze({
     async claim(leaseSeconds: number, includeGeneration: boolean) {
+      await enforcePrivacyConfiguration(client);
       const rows = await checked(
         client.rpc('claim_email_job', {
           p_lease_seconds: leaseSeconds,

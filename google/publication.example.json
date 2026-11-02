@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "projectId": "auto-email-511915",
+  "appName": "Auto Email",
+  "homepageUrl": "https://auto-email.ebia.cloud/",
+  "privacyPolicyUrl": "https://auto-email.ebia.cloud/privacy",
+  "authorizedDomains": ["ebia.cloud"],
+  "supportEmail": "ebayego.ia@gmail.com",
+  "developerContactEmails": ["ebayego.ia@gmail.com"],
+  "scopes": [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.compose"
+  ],
+  "demoVideoUrl": "",
+  "evidence": {
+    "domainOwnershipVerified": false,
+    "brandingReviewed": false,
+    "providerDataHandlingReviewed": false,
+    "reviewerAccessTested": false
+  },
+  "review": {
+    "status": "not_submitted",
+    "caseReference": "",
+    "approvedScopes": [],
+    "approvalDate": "",
+    "securityAssessment": {
+      "status": "not_started",
+      "reference": "",
+      "validUntil": ""
+    }
+  }
+}

@@ -15,6 +15,7 @@ select is((select min(max_daily_drafts) from public.user_settings), 30, 'Límite
 
 insert into auth.users (id, aud, role, email)
 values ('00000000-0000-4000-8000-000000000003', 'authenticated', 'authenticated', 'mail006-test@example.invalid');
+\ir fixtures/privacy.inc
 insert into public.users (id) values ('00000000-0000-4000-8000-000000000003')
 on conflict (id) do nothing;
 

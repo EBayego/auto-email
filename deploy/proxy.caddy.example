@@ -1,0 +1,4 @@
+# Add this site to the EXISTING Caddy configuration, with the actual domain.
+auto-email.ebia.cloud {
+    reverse_proxy 127.0.0.1:3087
+}

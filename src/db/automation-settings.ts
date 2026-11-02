@@ -1,5 +1,6 @@
 import type { DataClient } from './models';
 import { DataAccessError, requireUuid } from './errors';
+import { assertPrivacyAuthorized } from './privacy';
 import {
   AutomationSettingsError,
   automationSnapshotSchema,
@@ -38,6 +39,8 @@ export function createAutomationSettingsRepository(
       } catch {
         throw new DataAccessError('INVALID_INPUT');
       }
+      if (value.settings.execution.automationEnabled)
+        await assertPrivacyAuthorized(client, userId);
       const { data, error } = await client.rpc('set_automation_configuration', {
         p_user_id: userId,
         p_revision: value.revision,

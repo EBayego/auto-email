@@ -9,7 +9,8 @@ const sections = [
   ['/style', 'Mi estilo', '03'],
   ['/knowledge', 'Conocimiento', '04'],
   ['/activity', 'Actividad', '05'],
-  ['/settings', 'Ajustes', '06'],
+  ['/analytics', 'Métricas', '06'],
+  ['/settings', 'Ajustes', '07'],
 ] as const;
 
 export function WorkspaceNavigation() {

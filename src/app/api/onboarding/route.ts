@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getOnboardingAccess } from '@/app/_lib/onboarding';
 import { DataAccessError } from '@/db/errors';
+import { PrivacyError } from '@/modules/privacy/notice';
 import {
   OnboardingError,
   parseOnboardingOperation,
@@ -14,7 +15,9 @@ import {
 export const dynamic = 'force-dynamic';
 function failed(error: unknown) {
   const code =
-    error instanceof DataAccessError || error instanceof OnboardingError
+    error instanceof DataAccessError ||
+    error instanceof OnboardingError ||
+    error instanceof PrivacyError
       ? error.code
       : 'UNAVAILABLE';
   const status =
@@ -30,6 +33,8 @@ function failed(error: unknown) {
                 'NOT_CONNECTED',
                 'CONSENT_REQUIRED',
                 'CANCELLED',
+                'PRIVACY_CONSENT_REQUIRED',
+                'PRIVACY_CONFIGURATION_REQUIRED',
               ].includes(code)
             ? 409
             : 400;

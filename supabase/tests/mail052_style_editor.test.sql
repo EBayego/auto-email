@@ -6,6 +6,7 @@ select ok(not has_function_privilege('authenticated','public.edit_writing_style(
 insert into auth.users(id,aud,role,email) values
  ('00000000-0000-4000-8000-000000000052','authenticated','authenticated','mail052@example.invalid'),
  ('00000000-0000-4000-8000-000000000053','authenticated','authenticated','mail052-other@example.invalid');
+\ir fixtures/privacy.inc
 insert into public.gmail_accounts(id,user_id,email,status,encrypted_refresh_token,scope_set) values
  ('00000000-0000-4000-8000-000000000252','00000000-0000-4000-8000-000000000052','mail052@example.invalid','CONNECTED','\x0102',array['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/gmail.compose']);
 insert into public.style_profiles(user_id,gmail_account_id,profile,model,prompt_version,sample_size,input_tokens,output_tokens,source_message_ids) values

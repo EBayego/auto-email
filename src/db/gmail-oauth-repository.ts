@@ -4,6 +4,7 @@ import { DataAccessError, requireUuid } from './errors';
 import type { DataClient } from './models';
 import { createOwnerRepositories } from './repositories';
 import { randomUUID } from 'node:crypto';
+import { assertPrivacyAuthorized } from './privacy';
 
 export function createGmailOAuthRepository(
   client: DataClient,
@@ -17,6 +18,7 @@ export function createGmailOAuthRepository(
     const profile = await createOwnerRepositories(client, userId).users.get();
     if (!profile || profile.status !== 'ACTIVE')
       throw new DataAccessError('FORBIDDEN');
+    await assertPrivacyAuthorized(client, userId);
   };
   return Object.freeze({
     async beginAttempt({ stateHash, codeVerifier, expiresAt }) {

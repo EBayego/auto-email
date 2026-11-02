@@ -8,6 +8,7 @@ select ok(not has_function_privilege('authenticated','public.begin_draft_write(u
 select ok(has_function_privilege('service_role','public.begin_draft_write(uuid,uuid,uuid,text,text,uuid,uuid)','EXECUTE'),'Backend puede iniciar escrituras');
 select ok((select not prosecdef from pg_proc where oid='public.begin_draft_write(uuid,uuid,uuid,text,text,uuid,uuid)'::regprocedure),'RPC no eleva privilegios');
 insert into auth.users(id,aud,role,email) values ('00000000-0000-4000-8000-000000000034','authenticated','authenticated','mail034@example.invalid');
+\ir fixtures/privacy.inc
 insert into public.gmail_accounts(id,user_id,email,status,encrypted_refresh_token,scope_set) values
  ('00000000-0000-4000-8000-000000000234','00000000-0000-4000-8000-000000000034','mail034@example.invalid','CONNECTED','\x0102',
  array['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/gmail.compose']);

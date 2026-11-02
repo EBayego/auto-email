@@ -27,6 +27,7 @@ describe('cifrado de credenciales Gmail', () => {
       '\\x01',
       '\\x02' + encrypted.slice(4),
       modified,
+      encrypted + 'f',
     ])
       expect(() => decryptGmailRefreshToken(value, key, owner, email)).toThrow(
         'UNAVAILABLE',
@@ -64,6 +65,19 @@ describe('cifrado de credenciales Gmail', () => {
     ).toBe(token.reveal());
     expect(() =>
       decryptGmailRefreshToken(encrypted, key, owner, email),
+    ).toThrow('UNAVAILABLE');
+  });
+  it('rechaza claves no canónicas y tokens vacíos sin exponerlos en errores', () => {
+    expect(() =>
+      encryptGmailRefreshToken(
+        token,
+        new SecretValue(key.reveal() + '!'),
+        owner,
+        email,
+      ),
+    ).toThrow('UNAVAILABLE');
+    expect(() =>
+      encryptGmailRefreshToken(new SecretValue(''), key, owner, email),
     ).toThrow('UNAVAILABLE');
   });
 });

@@ -123,7 +123,7 @@ export function runGoogleCheck(args = process.argv.slice(2)) {
   }
   const report = checkGoogleCredentials(validateEnvironment(), credentialsText);
   console.log(
-    `Configuración local coherente con el JSON OAuth: ${report.projectId}.\nCallback registrado: ${report.redirectUri}\nScopes requeridos:\n${report.scopes.join('\n')}\n\nComprobaciones pendientes en Google Cloud:\nGmail API habilitada: ${report.consoleUrls.gmailApi}\nNombre de aplicación y correo de soporte: ${report.consoleUrls.branding}\nAudiencia External, estado Testing y usuarios de prueba: ${report.consoleUrls.audience}\nLos dos scopes declarados: ${report.consoleUrls.dataAccess}\nCliente Web application y callback: ${report.consoleUrls.clients}\n\nEsta comprobación no autentica el cliente ni confirma la configuración remota. La prueba de autorización requiere el flujo de MAIL-012.`,
+    `Configuración local coherente con el JSON OAuth: ${report.projectId}.\nCallback registrado: ${report.redirectUri}\nScopes requeridos:\n${report.scopes.join('\n')}\n\nComprobaciones pendientes en Google Cloud:\nGmail API habilitada: ${report.consoleUrls.gmailApi}\nNombre de aplicación y correo de soporte: ${report.consoleUrls.branding}\nAudiencia External; comprobar Testing y usuarios de prueba o el estado real de verificación para producción: ${report.consoleUrls.audience}\nLos dos scopes declarados: ${report.consoleUrls.dataAccess}\nCliente Web application y callback: ${report.consoleUrls.clients}\n\nEsta comprobación no autentica el cliente ni confirma la configuración remota. La prueba de autorización requiere el flujo de MAIL-012. Para preparar la publicación utiliza npm run google:release:check -- --help.`,
   );
 }
 

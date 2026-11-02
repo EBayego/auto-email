@@ -6,6 +6,7 @@ select no_plan();
 insert into auth.users (id, aud, role, email) values
   ('00000000-0000-4000-8000-000000000211', 'authenticated', 'authenticated', 'mail021-a@example.invalid'),
   ('00000000-0000-4000-8000-000000000212', 'authenticated', 'authenticated', 'mail021-b@example.invalid');
+\ir fixtures/privacy.inc
 insert into public.gmail_accounts (id, user_id, email, status, encrypted_refresh_token, scope_set) values
   ('10000000-0000-4000-8000-000000000211', '00000000-0000-4000-8000-000000000211', 'mail021-a@example.invalid', 'CONNECTED', '\x74657374', array['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.compose']),
   ('10000000-0000-4000-8000-000000000212', '00000000-0000-4000-8000-000000000212', 'mail021-b@example.invalid', 'CONNECTED', '\x74657374', array['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.compose']);

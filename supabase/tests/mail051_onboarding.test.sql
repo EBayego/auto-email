@@ -9,6 +9,7 @@ select ok(not has_function_privilege('authenticated',fn,'EXECUTE'),'Solo backend
 insert into auth.users(id,aud,role,email) values
  ('00000000-0000-4000-8000-000000000051','authenticated','authenticated','mail051@example.invalid'),
  ('00000000-0000-4000-8000-000000000052','authenticated','authenticated','mail051-other@example.invalid');
+\ir fixtures/privacy.inc
 insert into public.gmail_accounts(id,user_id,email,status,encrypted_refresh_token,scope_set) values
  ('00000000-0000-4000-8000-000000000251','00000000-0000-4000-8000-000000000051','mail051@example.invalid','CONNECTED','\x0102',array['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/gmail.compose']);
 select throws_ok($q$select public.save_onboarding_consent('00000000-0000-4000-8000-000000000051','{"after":"2026-01-01","before":"2026-10-01","maxCandidates":200,"excludedAddresses":[],"excludedDomains":[]}','mail051-v1',false)$q$,'P0001','CONSENT_REQUIRED','No registra aceptación implícita');

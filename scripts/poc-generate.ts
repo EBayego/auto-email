@@ -116,10 +116,11 @@ export async function main(args = process.argv.slice(2)) {
     | undefined;
   const report = await generateReplyForThread({
     gmail: await runtime.gmailFor(work),
-    text: runtime.providers.text,
+    text: runtime.providersFor(work).text,
     retrieveKnowledge: await runtime.knowledgeFor(work),
     policy: await runtime.policyFor(work),
     factualValidation: await runtime.factualValidationFor(work),
+    generations: await runtime.generationsFor(work),
     selection: {
       ...options.selection,
       accountId: work.gmailAccountId,

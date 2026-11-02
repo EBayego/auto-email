@@ -25,12 +25,14 @@ export async function generateEmailJobDraft(input: {
   await input.assertLease();
   const known = await input.store.find(job.targetMessageId);
   const existing = (record: NonNullable<typeof known>): GenerationOutcome =>
-    record.status === 'CREATED' && record.draftId
-      ? { status: 'DRAFT_CREATED', draftId: record.draftId }
-      : {
-          status: 'REVIEW_REQUIRED',
-          reasonCode: 'DRAFT_RECONCILIATION_REQUIRED',
-        };
+    record.sent
+      ? { status: 'SKIPPED', reasonCode: 'ALREADY_ANSWERED' }
+      : record.status === 'CREATED' && record.draftId
+        ? { status: 'DRAFT_CREATED', draftId: record.draftId }
+        : {
+            status: 'REVIEW_REQUIRED',
+            reasonCode: 'DRAFT_RECONCILIATION_REQUIRED',
+          };
   if (known) return existing(known);
   if (input.signal?.aborted)
     return { status: 'REVIEW_REQUIRED', reasonCode: 'WORKER_STOPPED' };

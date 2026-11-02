@@ -1,0 +1,4 @@
+create index draft_generations_generation_run_owner_idx
+  on public.draft_generations(generation_run_id,user_id,gmail_account_id);
+create index generation_content_authorizations_account_owner_idx
+  on public.generation_content_authorizations(gmail_account_id,user_id);

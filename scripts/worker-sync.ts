@@ -1,4 +1,8 @@
 import { parseArgs } from 'node:util';
+import { logOperationalEvent } from '../src/modules/security/operational-log';
+import { createOperationalTelemetry } from '../src/db/operational-telemetry';
+import { randomUUID } from 'node:crypto';
+import { startRuntimeHeartbeat } from '../src/modules/operations/runtime-health';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import nextEnvironment from '@next/env';
@@ -14,6 +18,8 @@ import { runMailWorkerCycle } from '../src/worker/pipeline';
 import type { JobEvent } from '../src/worker/email-jobs';
 import type { ProviderRequestEvent } from '../src/providers/request-policy';
 import type { OnboardingEvent } from '../src/worker/onboarding';
+import type { SentTrackingEvent } from '../src/worker/sent-draft-tracking';
+import type { ReplyComparisonEvent } from '../src/worker/reply-comparisons';
 
 export const usage = `MAIL-029 — Sincronización periódica de Gmail.
 Uso: npm run worker:sync -- [--once] [--help]
@@ -42,7 +48,7 @@ Cada ciclo sincroniza, clasifica y prepara borradores para REPLY_REQUIRED,
 con perfil confirmado, validación factual y políticas vigentes. Reconcilia
 las creaciones inciertas sin repetir escrituras ni modificar borradores existentes.
 Antes de clasificar comprueba borradores y respuestas existentes en Gmail.
-Solo registra IDs y contadores. Ctrl+C termina el ciclo de forma segura.`;
+Solo registra tipos, motivos y contadores; nunca identificadores personales. Ctrl+C termina el ciclo de forma segura.`;
 
 export async function main(args = process.argv.slice(2)) {
   const { values } = parseArgs({
@@ -61,17 +67,25 @@ export async function main(args = process.argv.slice(2)) {
     { info() {}, error() {} },
   );
   const config = getServerConfig();
+  const telemetry = createOperationalTelemetry(config);
   const syncConfig = readSyncConfig(process.env, config.timeoutMs);
   const controller = new AbortController();
   const report = (
-    event: SyncEvent | JobEvent | ProviderRequestEvent | OnboardingEvent,
-  ) => console.log(JSON.stringify(event));
+    event:
+      | SyncEvent
+      | JobEvent
+      | ProviderRequestEvent
+      | OnboardingEvent
+      | SentTrackingEvent
+      | ReplyComparisonEvent,
+  ) => logOperationalEvent(event);
   const runtime = createWorkerRuntime(config, undefined, {
     signal: controller.signal,
     report,
     enforceExecution: true,
   });
   const stop = () => controller.abort();
+  const stopHeartbeat = startRuntimeHeartbeat('worker');
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);
   const deps = {
@@ -87,49 +101,60 @@ export async function main(args = process.argv.slice(2)) {
     reconcileDrafts: runtime.reconcileDrafts,
     report: deps.report,
   };
-  const onboardingCycle = async () => {
-    try {
-      return await runtime.runOnboarding();
-    } catch {
-      console.log(
-        JSON.stringify({
-          type: 'ONBOARDING_FAILED',
-          reasonCode: 'UNAVAILABLE',
-        }),
-      );
-      return { failed: true };
-    }
-  };
-  const deletionCycle = async () => {
-    try {
-      return await runtime.runAccountDeletions({
-        signal: controller.signal,
-        report: (event) => console.log(JSON.stringify(event)),
-      });
-    } catch {
-      console.log(
-        JSON.stringify({
-          type: 'ACCOUNT_DELETION_RETRY',
-          reasonCode: 'UNAVAILABLE',
-        }),
-      );
-      return { failed: true };
-    }
-  };
-  const cycle = async () => {
-    const result = await runMailWorkerCycle(
-      deps,
-      syncConfig,
-      jobs,
-      {
-        leaseSeconds: syncConfig.leaseSeconds,
-        maxJobsPerCycle: syncConfig.maxJobsPerCycle,
+  const onboardingCycle = () =>
+    telemetry.run(
+      'ONBOARDING',
+      async () => {
+        try {
+          return await runtime.runOnboarding();
+        } catch {
+          logOperationalEvent({
+            type: 'ONBOARDING_FAILED',
+            reasonCode: 'UNAVAILABLE',
+          });
+          return { failed: true };
+        }
       },
-      controller.signal,
+      { failed: (value) => value.failed },
     );
-    console.log(JSON.stringify({ type: 'WORKER_CYCLE_COMPLETED', ...result }));
-    return result;
-  };
+  const deletionCycle = () =>
+    telemetry.run(
+      'DELETION',
+      async () => {
+        try {
+          return await runtime.runAccountDeletions({
+            signal: controller.signal,
+            report: logOperationalEvent,
+          });
+        } catch {
+          logOperationalEvent({
+            type: 'ACCOUNT_DELETION_RETRY',
+            reasonCode: 'UNAVAILABLE',
+          });
+          return { failed: true };
+        }
+      },
+      { failed: (value) => value.failed },
+    );
+  const cycle = () =>
+    telemetry.run(
+      'WORKER',
+      async () => {
+        const result = await runMailWorkerCycle(
+          deps,
+          syncConfig,
+          jobs,
+          {
+            leaseSeconds: syncConfig.leaseSeconds,
+            maxJobsPerCycle: syncConfig.maxJobsPerCycle,
+          },
+          controller.signal,
+        );
+        logOperationalEvent({ type: 'WORKER_CYCLE_COMPLETED', ...result });
+        return result;
+      },
+      { failed: (value) => value.failed },
+    );
   try {
     if (values.once) {
       const results = await Promise.all([
@@ -145,6 +170,7 @@ export async function main(args = process.argv.slice(2)) {
         runSyncWorker(deps, syncConfig, controller.signal, deletionCycle),
       ]);
   } finally {
+    stopHeartbeat();
     process.removeListener('SIGINT', stop);
     process.removeListener('SIGTERM', stop);
   }
@@ -156,9 +182,18 @@ if (
 ) {
   main().catch((error: unknown) => {
     console.error(
-      error instanceof ConfigurationError
-        ? error.message
-        : syncErrorCode(error),
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        type: 'ALERT_RAISED',
+        executionId: randomUUID(),
+        stage: 'WORKER',
+        severity: 'critical',
+        alert: 'WORKER_STARTUP_FAILED',
+        reasonCode:
+          error instanceof ConfigurationError
+            ? 'CONFIGURATION_INVALID'
+            : syncErrorCode(error),
+      }),
     );
     process.exitCode = 1;
   });

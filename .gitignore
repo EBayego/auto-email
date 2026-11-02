@@ -1,4 +1,6 @@
 # Logs
+# Expediente real de Google: contactos, referencias y enlaces privados.
+google/publication.local.json
 logs
 *.log
 npm-debug.log*
@@ -152,6 +154,7 @@ vite.config.ts.timestamp-*
 .turbo
 
 # Project-specific generated files and credentials
+/.production/
 /src/db/database.types.ts.tmp
 *.pem
 *.key
@@ -159,3 +162,5 @@ vite.config.ts.timestamp-*
 *.pfx
 credentials*.json
 client_secret*.json
+/state/erasures/
+*.erasure

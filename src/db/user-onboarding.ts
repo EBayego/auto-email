@@ -2,14 +2,14 @@ import 'server-only';
 import type { DataClient } from './models';
 import { openUserDataAccess } from './user-data';
 import { createServiceDataClient } from './service-client';
-import { getServerConfig } from '@/config/env';
+import { getDataServiceConfig } from '@/config/env';
 import { createUserOnboardingRepository } from './onboarding';
 
 export async function openUserOnboarding(client: DataClient) {
   const { user } = await openUserDataAccess(client);
   return createUserOnboardingRepository(
     client,
-    createServiceDataClient(getServerConfig()),
+    createServiceDataClient(getDataServiceConfig()),
     user.id,
   );
 }

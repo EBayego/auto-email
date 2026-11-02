@@ -4,7 +4,7 @@ import { DisconnectGmail } from './disconnect-gmail';
 export function GmailControls({ account }: { account: GmailAccount | null }) {
   return (
     <div className="workspace-actions">
-      <a className="button" href="/api/gmail/connect">
+      <a className="button" href="/privacy-consent">
         {account ? 'Volver a conectar Gmail' : 'Conectar Gmail'}
       </a>
       {account?.status === 'CONNECTED' && (

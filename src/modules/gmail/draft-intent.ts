@@ -11,6 +11,25 @@ export const draftIntentSchema = z.strictObject({
   fingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
 });
 export type DraftIntent = z.infer<typeof draftIntentSchema>;
+export function draftEnvelopeFingerprint(input: {
+  from: readonly EmailAddress[];
+  to: readonly EmailAddress[];
+  cc: readonly EmailAddress[];
+  bcc?: readonly EmailAddress[];
+}) {
+  const addresses = (items: readonly EmailAddress[]) =>
+    items.map((a) => a.address.toLowerCase()).sort();
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        from: addresses(input.from),
+        to: addresses(input.to),
+        cc: addresses(input.cc),
+        bcc: addresses(input.bcc ?? []),
+      }),
+    )
+    .digest('hex');
+}
 export function draftFingerprint(input: {
   from: readonly EmailAddress[];
   to: readonly EmailAddress[];

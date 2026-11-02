@@ -1,3 +1,4 @@
+import { createAuthorizedTestUser } from './fixtures/privacy';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/db/database.types';
@@ -29,7 +30,7 @@ describe('MAIL-033 cuotas compartidas con PostgreSQL real', () => {
   beforeEach(async () => {
     for (let i = 0; i < 2; i++) {
       const email = `mail033-${crypto.randomUUID()}@example.invalid`;
-      const result = await service.auth.admin.createUser({
+      const result = await createAuthorizedTestUser(service, {
         email,
         password: 'Mail033-Synthetic-Password!',
         email_confirm: true,

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 export function assertBusinessChangesHaveTests(changes) {
   const business = changes.filter(
     ({ path }) =>
-      !/\.(test|integration)\./.test(path) &&
+      !/\.(test|integration|e2e)\./.test(path) &&
       path !== 'src/db/database.types.ts' &&
       (/^src\/(modules|providers|worker|db|config)\/.*\.[cm]?tsx?$/.test(
         path,
@@ -18,7 +18,7 @@ export function assertBusinessChangesHaveTests(changes) {
   const updatedTests = changes.some(
     ({ status, path }) =>
       status !== 'D' &&
-      (/^(src|tests)\/.*\.(test|integration)\.[cm]?[jt]sx?$/.test(path) ||
+      (/^(src|tests)\/.*\.(test|integration|e2e)\.[cm]?[jt]sx?$/.test(path) ||
         /^supabase\/tests\/.*\.test\.sql$/.test(path)),
   );
   if (business.length && !updatedTests)

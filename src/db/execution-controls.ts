@@ -1,6 +1,7 @@
 import type { DataClient } from './models';
 import { DataAccessError, requireResource, requireUuid } from './errors';
 import { createOwnerRepositories } from './repositories';
+import { assertPrivacyAuthorized } from './privacy';
 import {
   executionSettingsSchema,
   type ExecutionSettings,
@@ -28,6 +29,8 @@ export function createExecutionControlRepository(
       const parsed = executionSettingsSchema.safeParse(settings);
       if (!parsed.success) throw new DataAccessError('INVALID_INPUT');
       await active();
+      if (parsed.data.automationEnabled)
+        await assertPrivacyAuthorized(client, userId);
       await result(
         client.rpc('set_automation_settings', {
           p_user_id: userId,
@@ -41,6 +44,7 @@ export function createExecutionControlRepository(
       if (!['pause', 'resume', 'run'].includes(action))
         throw new DataAccessError('INVALID_INPUT');
       await active();
+      if (action !== 'pause') await assertPrivacyAuthorized(client, userId);
       const account = requireResource(await owner.gmailAccounts.get());
       if (action === 'run')
         await result(

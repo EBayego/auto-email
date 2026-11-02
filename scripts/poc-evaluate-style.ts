@@ -267,7 +267,7 @@ export async function main(args = process.argv.slice(2)) {
   try {
     const report = await evaluateHistoricalStyle({
       gmail,
-      text: runtime.providers.text,
+      text: runtime.providersFor(work).text,
       identity,
       corpus,
       model: config.openai.model,

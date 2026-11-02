@@ -14,6 +14,7 @@ select ok(not has_function_privilege('authenticated','public.email_job_intervent
 select ok(has_function_privilege('service_role','public.email_job_intervention_reason(text,text)','EXECUTE'),'Backend puede validar motivos');
 select ok(not has_function_privilege('authenticated','public.advance_email_job(uuid,uuid,uuid,uuid,text,text,text,jsonb,text)','EXECUTE'),'Reemplazar RPC conserva permisos');
 insert into auth.users(id,aud,role,email) values ('00000000-0000-4000-8000-000000000032','authenticated','authenticated','mail032@example.invalid');
+\ir fixtures/privacy.inc
 insert into public.gmail_accounts(id,user_id,email,status,encrypted_refresh_token,scope_set) values
  ('00000000-0000-4000-8000-000000000232','00000000-0000-4000-8000-000000000032','mail032@example.invalid','CONNECTED','\x0102',
  array['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/gmail.compose']);

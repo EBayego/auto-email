@@ -6,6 +6,7 @@ select no_plan();
 select ok((select relrowsecurity from pg_class where oid='public.gmail_oauth_attempts'::regclass), 'RLS protege los intentos OAuth');
 insert into auth.users (id, aud, role, email) values
   ('00000000-0000-4000-8000-000000000012', 'authenticated', 'authenticated', 'mail012@example.invalid');
+\ir fixtures/privacy.inc
 insert into auth.sessions (id, user_id) values
   ('10000000-0000-4000-8000-000000000012', '00000000-0000-4000-8000-000000000012');
 

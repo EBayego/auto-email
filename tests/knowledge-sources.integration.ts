@@ -1,3 +1,4 @@
+import { createAuthorizedTestUser } from './fixtures/privacy';
 import {
   afterAll,
   beforeAll,
@@ -91,7 +92,7 @@ describe('MAIL-038 registro privado y búsqueda según reglas', () => {
     for (let i = 0; i < 2; i++) {
       const email = `sources-${crypto.randomUUID()}@example.invalid`,
         password = `Source-${crypto.randomUUID()}!`;
-      const created = await service.auth.admin.createUser({
+      const created = await createAuthorizedTestUser(service, {
         email,
         password,
         email_confirm: true,

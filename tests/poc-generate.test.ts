@@ -45,7 +45,8 @@ vi.mock('@/worker/runtime', () => ({
     knowledgeFor: vi.fn(async () => undefined),
     policyFor: vi.fn(async () => undefined),
     factualValidationFor: vi.fn(async () => ({ record: vi.fn() })),
-    providers: { text: { generate: mocks.generate } },
+    generationsFor: vi.fn(async () => ({ record: vi.fn() })),
+    providersFor: () => ({ text: { generate: mocks.generate } }),
   })),
 }));
 

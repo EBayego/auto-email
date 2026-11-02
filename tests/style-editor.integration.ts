@@ -1,3 +1,4 @@
+import { createAuthorizedTestUser } from './fixtures/privacy';
 import {
   afterAll,
   beforeAll,
@@ -157,7 +158,7 @@ describe('MAIL-052 editor de escritura y aplicación real de sus preferencias', 
     for (let index = 0; index < 2; index++) {
       const email = `mail052-${crypto.randomUUID()}@example.invalid`,
         password = `Test-${crypto.randomUUID()}`;
-      const created = await service.auth.admin.createUser({
+      const created = await createAuthorizedTestUser(service, {
         email,
         password,
         email_confirm: true,

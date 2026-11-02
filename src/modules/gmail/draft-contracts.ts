@@ -9,6 +9,7 @@ export type DraftReason =
   | 'PERSISTENCE_FAILED'
   | 'VERIFICATION_FAILED';
 export type DraftRecord = {
+  sent?: boolean;
   id: string;
   threadId: string;
   targetMessageId: string;
@@ -18,6 +19,8 @@ export type DraftRecord = {
   verified: boolean;
 };
 export type DraftReservation = {
+  envelopeHash?: string;
+  generationRunId?: string;
   id: string;
   threadId: string;
   targetMessageId: string;
@@ -43,7 +46,7 @@ export interface DraftStore {
     targetMessageId: string,
   ): Promise<boolean>;
   created(id: string, draftId: string, messageId: string): Promise<void>;
-  verified(id: string): Promise<void>;
+  verified(id: string, internetMessageId?: string): Promise<void>;
   stop(
     id: string,
     status: 'UNCERTAIN' | 'CANCELLED',

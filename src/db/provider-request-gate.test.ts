@@ -19,6 +19,8 @@ describe('EPIC-05 controles tras adquirir cuota', () => {
     async (allowed) => {
       let permissionReads = 0;
       const rpc = vi.fn(async (name: string) => {
+        if (name === 'privacy_authorization_valid')
+          return { data: true, error: null };
         if (name === 'gmail_execution_allowed')
           return {
             data: ++permissionReads === 1 ? true : allowed,
@@ -49,6 +51,8 @@ describe('EPIC-05 controles tras adquirir cuota', () => {
   it('no devuelve un permiso si no puede revalidar el control y mantiene el error de almacenamiento', async () => {
     let permissionReads = 0;
     const rpc = vi.fn(async (name: string) => {
+      if (name === 'privacy_authorization_valid')
+        return { data: true, error: null };
       if (name === 'gmail_execution_allowed')
         return ++permissionReads === 1
           ? { data: true, error: null }

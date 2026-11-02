@@ -1,0 +1,26 @@
+# New dynamic file for the existing Traefik, not another Compose file.
+# Install only after the production app and public access are ready.
+http:
+  routers:
+    auto-email-http:
+      rule: 'Host(`auto-email.ebia.cloud`)'
+      entryPoints: [web]
+      middlewares: [auto-email-https]
+      service: auto-email-web
+    auto-email-secure:
+      rule: 'Host(`auto-email.ebia.cloud`)'
+      entryPoints: [websecure]
+      service: auto-email-web
+      tls:
+        certResolver: le
+  middlewares:
+    auto-email-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+  services:
+    auto-email-web:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: 'http://auto-email-prod-web:3000'

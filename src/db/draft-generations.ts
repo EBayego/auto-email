@@ -14,9 +14,10 @@ import { factualAuditSchema } from '@/modules/response/factual-validation';
 import { draftIntentSchema } from '@/modules/gmail/draft-intent';
 import { z } from 'zod';
 import { responseWarnings } from '@/modules/response/contracts';
+import { validMimeMessageId } from '@/modules/gmail/mime';
 
 const columns =
-  'id,user_id,gmail_account_id,thread_id,target_message_id,status,draft_id,draft_message_id,verified_at';
+  'id,user_id,gmail_account_id,thread_id,target_message_id,status,draft_id,draft_message_id,verified_at,sent_outcome';
 const id = (value: string) =>
   typeof value === 'string' && /^[A-Za-z0-9_-]{1,512}$/.test(value);
 export function createDraftGenerationRepository(
@@ -61,6 +62,7 @@ export function createDraftGenerationRepository(
       | 'draft_id'
       | 'draft_message_id'
       | 'verified_at'
+      | 'sent_outcome'
     > | null,
   ): DraftRecord | null => {
     if (!row) return null;
@@ -78,6 +80,12 @@ export function createDraftGenerationRepository(
       draftId: row.draft_id,
       draftMessageId: row.draft_message_id,
       verified: row.verified_at !== null,
+      ...(row.sent_outcome &&
+      typeof row.sent_outcome === 'object' &&
+      !Array.isArray(row.sent_outcome) &&
+      row.sent_outcome.status === 'SENT'
+        ? { sent: true }
+        : {}),
     };
   };
   const scoped = () =>
@@ -96,7 +104,27 @@ export function createDraftGenerationRepository(
     const row = checked(data);
     if (row && row.targetMessageId !== target)
       throw new DataAccessError('UNAVAILABLE');
-    return row;
+    if (row) return row;
+    const archived = await client.rpc('find_archived_draft', {
+      p_user_id: userId,
+      p_account_id: accountId,
+      p_target_message_id: target,
+    });
+    if (archived.error || !archived.data || archived.data.length > 1)
+      throw new DataAccessError('UNAVAILABLE');
+    const old = archived.data[0];
+    if (!old) return null;
+    requireUuid(old.id);
+    return {
+      id: old.id,
+      threadId: old.thread_id,
+      targetMessageId: target,
+      status: 'UNCERTAIN' as const,
+      draftId: null,
+      draftMessageId: null,
+      verified: false,
+      ...(old.sent ? { sent: true } : {}),
+    };
   };
   const update = async (
     attempt: string,
@@ -133,6 +161,7 @@ export function createDraftGenerationRepository(
         .optional()
         .safeParse(input.factualValidation);
       requireUuid(input.id);
+      if (input.generationRunId) requireUuid(input.generationRunId);
       requireUuid(input.styleRevision);
       if (
         !sources.success ||
@@ -146,6 +175,8 @@ export function createDraftGenerationRepository(
           !/^[a-f0-9]{32}$/.test(input.knowledgeRevision)) ||
         !id(input.threadId) ||
         !id(input.targetMessageId) ||
+        (input.envelopeHash !== undefined &&
+          !/^[a-f0-9]{64}$/.test(input.envelopeHash)) ||
         (job &&
           (input.threadId !== job.threadId ||
             input.targetMessageId !== job.targetMessageId)) ||
@@ -160,6 +191,8 @@ export function createDraftGenerationRepository(
         .from('draft_generations')
         .insert({
           id: input.id,
+          delivery_envelope_hash: input.envelopeHash,
+          generation_run_id: input.generationRunId,
           user_id: userId,
           gmail_account_id: accountId,
           thread_id: input.threadId,
@@ -197,6 +230,7 @@ export function createDraftGenerationRepository(
         const result = await scoped()
           .eq('thread_id', input.threadId)
           .in('status', ['CREATING', 'UNCERTAIN'])
+          .neq('sent_outcome->>status', 'SENT')
           .maybeSingle();
         if (result.error) throw new DataAccessError('UNAVAILABLE');
         record = checked(result.data);
@@ -239,10 +273,20 @@ export function createDraftGenerationRepository(
         'CREATING',
       );
     },
-    async verified(attempt) {
+    async verified(attempt, internetMessageId) {
+      if (
+        internetMessageId !== undefined &&
+        !validMimeMessageId(internetMessageId)
+      )
+        throw new DataAccessError('INVALID_INPUT');
       await update(
         attempt,
-        { verified_at: new Date().toISOString() },
+        {
+          verified_at: new Date().toISOString(),
+          ...(internetMessageId
+            ? { draft_internet_message_id: internetMessageId }
+            : {}),
+        },
         'CREATED',
       );
     },

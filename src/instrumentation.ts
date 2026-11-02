@@ -3,10 +3,29 @@ export async function register() {
     process.env.NEXT_RUNTIME === 'nodejs' &&
     process.env.NEXT_PHASE !== 'phase-production-build'
   ) {
-    const { getServerConfig, ConfigurationError } =
+    const { getWebServerConfig, ConfigurationError } =
       await import('./config/env');
     try {
-      getServerConfig();
+      const config = getWebServerConfig();
+      const { createOperationalTelemetry } =
+        await import('./db/operational-telemetry');
+      const { installTelemetry } =
+        await import('./modules/observability/telemetry');
+      installTelemetry(createOperationalTelemetry(config));
+      for (const name of [
+        'OPENAI_API_KEY',
+        'SUPABASE_ACCESS_TOKEN',
+        'SUPABASE_DB_PASSWORD',
+        'ALERT_WEBHOOK_URL',
+        'ALERT_WEBHOOK_BEARER_TOKEN',
+      ])
+        process.env[name] = '';
+      const { getErasureLedger } =
+        await import('./modules/security/erasure-ledger');
+      getErasureLedger();
+      const { startRuntimeHeartbeat } =
+        await import('./modules/operations/runtime-health');
+      startRuntimeHeartbeat('web');
     } catch (error) {
       console.error(
         error instanceof ConfigurationError
@@ -15,5 +34,14 @@ export async function register() {
       );
       process.exit(1);
     }
+  }
+}
+
+export async function onRequestError(error: unknown) {
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { observe } = await import('./modules/observability/telemetry');
+    await observe('WEB', async () => {
+      throw error;
+    }).catch(() => {});
   }
 }

@@ -11,6 +11,8 @@ import { getAutomationSettings } from '@/app/_lib/automation-settings';
 import { getKnowledgeSources } from '@/app/_lib/knowledge-sources';
 import { SettingsContent } from './settings-content';
 import { AccountDataControls } from './account-data-controls';
+import { GenerationRetentionPanel } from './generation-retention-panel';
+import { PrivacyPanel } from './privacy-panel';
 
 export const metadata = { title: 'Ajustes · Auto Email' };
 
@@ -32,6 +34,7 @@ export default async function SettingsPage({
         description="Elige qué correos procesar, las fuentes que puede consultar el asistente y los límites de sus propuestas."
       />
       <Notices params={await searchParams} />
+      <PrivacyPanel />
       <Panel title="Cuenta Gmail">
         {gmail.status === 'fulfilled' ? (
           <>
@@ -58,6 +61,12 @@ export default async function SettingsPage({
           gmail.status === 'fulfilled' && gmail.value?.status === 'CONNECTED'
         }
       />
+      {gmail.status === 'fulfilled' && gmail.value?.status === 'CONNECTED' && (
+        <GenerationRetentionPanel
+          key={gmail.value.id}
+          accountId={gmail.value.id}
+        />
+      )}
       <AccountDataControls email={account.user.email} />
     </>
   );

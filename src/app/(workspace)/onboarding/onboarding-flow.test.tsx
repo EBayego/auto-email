@@ -51,7 +51,7 @@ describe('MAIL-051 estados del onboarding', () => {
     const retry = html.match(/<button[^>]*>Reintentar análisis<\/button>/)?.[0];
     expect(retry).toBeDefined();
     expect(retry).not.toContain('disabled');
-    expect(html).toContain('href="/api/gmail/connect?onboarding=1"');
+    expect(html).toContain('href="/privacy-consent?onboarding=1"');
   });
   it('solicita reconexión y bloquea el análisis si Gmail aún necesita autorización', () => {
     const html = render(

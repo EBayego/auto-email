@@ -1,3 +1,4 @@
+import { createAuthorizedTestUser } from './fixtures/privacy';
 import {
   afterAll,
   beforeAll,
@@ -126,7 +127,7 @@ describe('MAIL-051 onboarding con sesión, cola y perfil real en Supabase local'
     for (let index = 0; index < 2; index++) {
       const email = `mail051-${crypto.randomUUID()}@example.invalid`,
         password = `Test-${crypto.randomUUID()}`;
-      const created = await service.auth.admin.createUser({
+      const created = await createAuthorizedTestUser(service, {
         email,
         password,
         email_confirm: true,

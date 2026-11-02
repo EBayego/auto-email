@@ -38,28 +38,55 @@ import { createOnboardingWorkerStore } from '@/db/onboarding';
 import { runOnboardingAnalysis, type OnboardingEvent } from './onboarding';
 import { inspectAutomationSelection } from './automation-selection';
 import { createAccountDeletionRuntime } from '@/db/account-deletion-runtime';
+import { createGenerationRecorder } from '@/db/generation-runs';
+import { readGenerationPricing } from '@/modules/analytics/generations';
+import { createSentDraftTrackingStore } from '@/db/sent-draft-tracking';
+import {
+  runSentDraftTracking,
+  type SentTrackingEvent,
+} from './sent-draft-tracking';
+import { createReplyComparisonStore } from '@/db/reply-comparisons';
+import { runStyleLearning } from './style-learning';
+import { createStyleLearningWorkerStore } from '@/db/style-learning';
+import {
+  runReplyComparisons,
+  type ReplyComparisonEvent,
+} from './reply-comparisons';
 
 export function createWorkerRuntime(
   config: ServerConfig = getServerConfig(),
   mocks?: ProviderClients,
   controls: {
     signal?: AbortSignal;
-    report?: (event: ProviderRequestEvent | JobEvent | OnboardingEvent) => void;
+    report?: (
+      event:
+        | ProviderRequestEvent
+        | JobEvent
+        | OnboardingEvent
+        | SentTrackingEvent
+        | ReplyComparisonEvent,
+    ) => void;
     enforceExecution?: boolean;
   } = {},
 ) {
   const client = createServiceDataClient(config);
+  const generationPricing = readGenerationPricing(process.env);
   const requestConfig = readRequestPolicyConfig(process.env, config.timeoutMs);
-  const executorFor = (work?: OwnedWorkItem) =>
+  const executorFor = (
+    work: OwnedWorkItem,
+    enforceExecution = controls.enforceExecution,
+  ) =>
     createProviderRequestExecutor({
-      gate: createProviderRequestGate(client, work, controls.enforceExecution),
+      gate: createProviderRequestGate(client, work, enforceExecution),
       config: requestConfig,
       signal: controls.signal,
       report: controls.report,
       accountId: work?.gmailAccountId,
     });
-  const providers = createProviderClients(config, mocks, executorFor());
-  const gmailFor = async (work: OwnedWorkItem) => {
+  const connectGmail = async (
+    work: OwnedWorkItem,
+    enforceExecution = controls.enforceExecution,
+  ) => {
     await openWorkerDataAccess(client, work);
     if (config.providerMode !== 'live') throw new Error('GMAIL_UNAVAILABLE');
     return createGmailConnection({
@@ -68,13 +95,29 @@ export function createWorkerRuntime(
         work.userId,
         work.gmailAccountId,
       ),
-      providers: createProviderClients(config, mocks, executorFor(work)),
+      providers: createProviderClients(
+        config,
+        mocks,
+        executorFor(work, enforceExecution),
+      ),
       encryptionKey: config.gmail.tokenEncryptionKey,
       timeoutMs: config.timeoutMs,
     }).client;
   };
+  const gmailFor = (work: OwnedWorkItem) => connectGmail(work);
+  // Tracking previous drafts is independent of incoming-mail automation.
+  // The credential store still requires an active user and connected account.
+  const trackingGmailFor = async (work: OwnedWorkItem) => {
+    const gmail = await connectGmail(work, false);
+    return Object.freeze({
+      get: gmail.get.bind(gmail),
+      getThread: gmail.getThread.bind(gmail),
+      getMessage: gmail.getMessage.bind(gmail),
+    });
+  };
   const runtime = Object.freeze({
-    providers,
+    providersFor: (work: OwnedWorkItem) =>
+      createProviderClients(config, mocks, executorFor(work, false)),
     runAccountDeletions: createAccountDeletionRuntime(config),
     syncStore: createGmailSyncStore(client),
     jobStore: createEmailJobStore(client),
@@ -141,6 +184,29 @@ export function createWorkerRuntime(
         limit,
         signal ?? controls.signal,
       );
+      await runSentDraftTracking(
+        {
+          store: createSentDraftTrackingStore(client),
+          gmailFor: trackingGmailFor,
+          report: (event) => controls.report?.(event),
+        },
+        limit,
+        signal ?? controls.signal,
+      );
+      await runReplyComparisons(
+        {
+          store: createReplyComparisonStore(client),
+          gmailFor: trackingGmailFor,
+          report: (event) => controls.report?.(event),
+        },
+        limit,
+        signal ?? controls.signal,
+      );
+      await runStyleLearning(
+        createStyleLearningWorkerStore(client),
+        limit,
+        signal ?? controls.signal,
+      );
     },
     async generateEmailJob(
       job: EmailJob,
@@ -159,6 +225,8 @@ export function createWorkerRuntime(
         job.gmailAccountId,
       );
       const existing = await store.find(job.targetMessageId);
+      if (existing?.sent)
+        return { status: 'SKIPPED', reasonCode: 'ALREADY_ANSWERED' };
       if (existing)
         return existing.status === 'CREATED' && existing.draftId
           ? { status: 'DRAFT_CREATED', draftId: existing.draftId }
@@ -221,6 +289,12 @@ export function createWorkerRuntime(
           },
         },
         orchestration: {
+          generations: createGenerationRecorder(
+            client,
+            { ...job, emailJobId: job.id },
+            { id: config.openai.model, ...config.openai },
+            generationPricing,
+          ),
           gmail,
           generator: createResponseGenerator(
             createProviderClients(config, mocks, executorFor(job)).text,
@@ -244,6 +318,16 @@ export function createWorkerRuntime(
           signal: control.signal ?? controls.signal,
         }),
       });
+    },
+    async generationsFor(work: OwnedWorkItem) {
+      await openWorkerDataAccess(client, work);
+      if (!config.openai) throw new DataAccessError('UNAVAILABLE');
+      return createGenerationRecorder(
+        client,
+        work,
+        { id: config.openai.model, ...config.openai },
+        generationPricing,
+      );
     },
     async factualValidationFor(work: OwnedWorkItem) {
       await openWorkerDataAccess(client, work);

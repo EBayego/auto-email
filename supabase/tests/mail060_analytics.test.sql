@@ -1,0 +1,16 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+select no_plan();
+select has_index('public','draft_generations','draft_generations_analytics_period_idx','Las cohortes tienen índice por propietario y fecha');
+select ok(not has_function_privilege('anon','public.get_analytics_dashboard(uuid,integer,timestamptz)','EXECUTE'),'Las métricas no son anónimas');
+select ok(not has_function_privilege('authenticated','public.get_analytics_dashboard(uuid,integer,timestamptz)','EXECUTE'),'No se puede elegir propietario desde el navegador');
+select ok(has_function_privilege('service_role','public.get_analytics_dashboard(uuid,integer,timestamptz)','EXECUTE'),'El servidor validado puede agregar');
+select ok(not has_function_privilege('authenticated','public.analytics_period_totals(uuid,timestamptz,timestamptz)','EXECUTE'),'Los totales internos son privados');
+select ok(not has_function_privilege('anon','public.analytics_reason_counts(uuid,timestamptz,timestamptz,text)','EXECUTE'),'Los motivos internos son privados');
+select ok(not (select prosecdef from pg_proc where oid='public.get_analytics_dashboard(uuid,integer,timestamptz)'::regprocedure),'La agregación no eleva permisos');
+select throws_ok($$select public.get_analytics_dashboard(gen_random_uuid(),365)$$,'P0001','INVALID_INPUT','El servidor limita los periodos');
+select throws_ok($$select public.get_analytics_dashboard(gen_random_uuid(),7)$$,'P0001','FORBIDDEN','No agrega usuarios inexistentes');
+select is(public.analytics_period_totals(gen_random_uuid(),'2026-10-01','2026-10-31')->'knownCostUsd','null'::jsonb,'El coste desconocido no es cero');
+select is(public.analytics_period_totals(gen_random_uuid(),'2026-10-01','2026-10-31')->'meanSimilarity','null'::jsonb,'La calidad sin comparaciones no es cero');
+select * from finish();
+rollback;

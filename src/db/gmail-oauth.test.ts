@@ -18,7 +18,8 @@ const user = {
 };
 const sessionId = '10000000-0000-4000-8000-000000000012';
 const getClaims = vi.fn();
-const client = { auth: { getClaims } } as unknown as DataClient;
+const rpc = vi.fn();
+const client = { auth: { getClaims }, rpc } as unknown as DataClient;
 
 describe('contexto de acceso OAuth', () => {
   beforeEach(() => {
@@ -31,6 +32,7 @@ describe('contexto de acceso OAuth', () => {
       data: { claims: { sub: user.id, session_id: sessionId } },
     });
     vi.mocked(createServiceDataClient).mockReturnValue(client);
+    rpc.mockResolvedValue({ data: true, error: null });
   });
 
   it('deriva usuario y sesión de identidad validada antes de abrir el repositorio privilegiado', async () => {
@@ -70,5 +72,13 @@ describe('contexto de acceso OAuth', () => {
     await expect(openGmailOAuthData(client)).rejects.toThrow();
     expect(getClaims).not.toHaveBeenCalled();
     expect(createServiceDataClient).not.toHaveBeenCalled();
+  });
+
+  it('no abre OAuth sin autorización de privacidad vigente', async () => {
+    rpc.mockResolvedValue({ data: false, error: null });
+    await expect(openGmailOAuthData(client)).rejects.toMatchObject({
+      code: 'PRIVACY_CONSENT_REQUIRED',
+    });
+    expect(createGmailOAuthRepository).not.toHaveBeenCalled();
   });
 });

@@ -27,7 +27,7 @@ vi.mock('@/db/writing-profiles', () => ({
 vi.mock('@/worker/runtime', () => ({
   createWorkerRuntime: vi.fn(() => ({
     gmailFor: mocks.gmailFor,
-    providers: { text: { generate: mocks.generate } },
+    providersFor: () => ({ text: { generate: mocks.generate } }),
   })),
 }));
 

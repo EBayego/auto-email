@@ -91,6 +91,7 @@ export type GenerateReplyInput = {
 };
 export type ResponseGenerationInput = GenerateReplyInput;
 export type ResponseGenerationResult = GeneratedResponse & {
+  generationRunId?: string;
   inputTokens: number;
   outputTokens: number;
   modelCalls: number;

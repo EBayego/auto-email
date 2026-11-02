@@ -204,6 +204,7 @@ describe('clientes de proveedores', () => {
     const body = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
     expect(body.model).toBe(aiConfig.model);
     expect(body.store).toBe(false);
+    expect(body.background).toBe(false);
     expect(body.text.format.strict).toBe(true);
     expect(body.tools).toBeUndefined();
     expect(body.tool_choice).toBe('none');

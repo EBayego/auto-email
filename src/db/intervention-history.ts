@@ -25,7 +25,7 @@ export function createInterventionHistoryRepository(
         client
           .from('draft_generations')
           .select(
-            'user_id,gmail_account_id,target_message_id,thread_id,status,draft_id,draft_message_id',
+            'user_id,gmail_account_id,target_message_id,thread_id,status,draft_id,draft_message_id,sent_outcome',
           )
           .eq('user_id', userId)
           .eq('gmail_account_id', accountId)
@@ -70,7 +70,13 @@ export function createInterventionHistoryRepository(
           return {
             targetMessageId: draft.target_message_id,
             threadId: draft.thread_id,
-            status: draft.status as KnownDraftAttempt['status'],
+            status:
+              draft.sent_outcome &&
+              typeof draft.sent_outcome === 'object' &&
+              !Array.isArray(draft.sent_outcome) &&
+              draft.sent_outcome.status === 'SENT'
+                ? 'CREATED'
+                : (draft.status as KnownDraftAttempt['status']),
             draftId: draft.draft_id,
             draftMessageId: draft.draft_message_id,
           };

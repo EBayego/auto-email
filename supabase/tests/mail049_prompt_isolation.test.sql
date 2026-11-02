@@ -5,6 +5,7 @@ select no_plan();
 
 insert into auth.users(id,aud,role,email) values
  ('00000000-0000-4000-8000-000000000049','authenticated','authenticated','security49@example.invalid');
+\ir fixtures/privacy.inc
 insert into public.gmail_accounts(id,user_id,email,status,encrypted_refresh_token,scope_set) values
  ('10000000-0000-4000-8000-000000000049','00000000-0000-4000-8000-000000000049','security49@example.invalid','CONNECTED','\x0102',array['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/gmail.compose']);
 set local role service_role;

@@ -1,0 +1,12 @@
+[Unit]
+Description=Auto Email encrypted backup and restore verification
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/auto-email
+ExecStart=/opt/auto-email-node/bin/node /opt/auto-email/deploy/backup-job.mjs --config /srv/auto-email-prod/deployment.env
+User=root
+UMask=0077
+TimeoutStartSec=2h

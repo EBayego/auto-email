@@ -3,6 +3,8 @@ import { getAuthConfig } from '@/modules/auth/config';
 import { getGmailOAuthService } from '@/app/_lib/gmail-oauth';
 import { DataAccessError } from '@/db/errors';
 import { GmailOAuthError } from '@/modules/gmail/errors';
+import { PrivacyError } from '@/modules/privacy/notice';
+import { gmailRequestOriginMatches } from '../origin';
 import {
   gmailOAuthCookie,
   gmailOAuthLifetimeSeconds,
@@ -20,12 +22,20 @@ export async function GET(request: NextRequest) {
   try {
     const config = getAuthConfig();
     if (
-      request.nextUrl.origin !== config.appOrigin ||
+      !gmailRequestOriginMatches(request, config.appOrigin) ||
       request.headers.get('sec-fetch-site') === 'cross-site'
     )
       return NextResponse.json(
         { error: 'INVALID_ORIGIN' },
         { status: 400, headers },
+      );
+    if (request.nextUrl.searchParams.get('authorized') !== '1')
+      return NextResponse.redirect(
+        new URL(
+          `/privacy-consent${request.nextUrl.searchParams.get('onboarding') === '1' ? '?onboarding=1' : ''}`,
+          config.appOrigin,
+        ),
+        { status: 303, headers },
       );
     const service = await getGmailOAuthService();
     const { state, url } = await service.begin();
@@ -55,6 +65,14 @@ export async function GET(request: NextRequest) {
     );
     return response;
   } catch (error) {
+    if (error instanceof PrivacyError)
+      return NextResponse.redirect(
+        new URL(
+          `/privacy-consent${request.nextUrl.searchParams.get('onboarding') === '1' ? '?onboarding=1' : ''}`,
+          getAuthConfig().appOrigin,
+        ),
+        { status: 303, headers },
+      );
     if (error instanceof GmailOAuthError) {
       const response = NextResponse.redirect(
         new URL(

@@ -1,3 +1,4 @@
+import { createAuthorizedTestUser } from './fixtures/privacy';
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -160,7 +161,7 @@ describe('MAIL-042 evaluación del Knowledge Engine con corpus controlado', () =
     for (let i = 0; i < 2; i++) {
       const email = `knowledge-evaluation-${crypto.randomUUID()}@example.invalid`,
         password = `Evaluation-${crypto.randomUUID()}!`;
-      const created = await service.auth.admin.createUser({
+      const created = await createAuthorizedTestUser(service, {
         email,
         password,
         email_confirm: true,

@@ -4,6 +4,7 @@ select plan(17);
 insert into auth.users(id,aud,role,email) values
  ('00000000-0000-4000-8000-000000000040','authenticated','authenticated','provenance40@example.invalid'),
  ('00000000-0000-4000-8000-000000000140','authenticated','authenticated','foreign40@example.invalid');
+\ir fixtures/privacy.inc
 insert into public.knowledge_sources(id,user_id,title) values
  ('10000000-0000-4000-8000-000000000040','00000000-0000-4000-8000-000000000040','Fuente oficial');
 insert into public.source_documents(id,user_id,source_id,name,mime_type,byte_size,sha256,status,has_file,text_length,indexed_at,chunk_count,indexer_version,index_hash,content_updated_at)

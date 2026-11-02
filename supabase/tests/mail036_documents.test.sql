@@ -5,6 +5,7 @@ select no_plan();
 insert into auth.users(id,aud,role,email) values
  ('00000000-0000-4000-8000-000000000036','authenticated','authenticated','mail036@example.invalid'),
  ('00000000-0000-4000-8000-000000000136','authenticated','authenticated','mail036-other@example.invalid');
+\ir fixtures/privacy.inc
 select ok((select not public from storage.buckets where id='knowledge-documents'),'Bucket privado');
 select ok(not has_function_privilege('authenticated','public.reserve_source_document(uuid,text,text,integer,text)','EXECUTE'),'No reserva desde cliente');
 select ok(not has_function_privilege('anon','public.complete_source_document(uuid,uuid,text)','EXECUTE'),'No completa desde anon');

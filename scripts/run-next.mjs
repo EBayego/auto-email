@@ -8,7 +8,7 @@ if (!['dev', 'start'].includes(command))
   throw new Error('Comando no admitido.');
 process.env.NODE_ENV ??= command === 'dev' ? 'development' : 'production';
 try {
-  validateEnvironment(command === 'dev');
+  validateEnvironment(command === 'dev', 'web');
 } catch (error) {
   console.error(
     error instanceof ConfigurationError
@@ -17,6 +17,14 @@ try {
   );
   process.exit(1);
 }
+const webEnvironment = {
+  ...process.env,
+  OPENAI_API_KEY: '',
+  SUPABASE_ACCESS_TOKEN: '',
+  SUPABASE_DB_PASSWORD: '',
+  ALERT_WEBHOOK_URL: '',
+  ALERT_WEBHOOK_BEARER_TOKEN: '',
+};
 const child = spawn(
   process.execPath,
   [
@@ -26,7 +34,7 @@ const child = spawn(
     command,
     ...process.argv.slice(3),
   ],
-  { stdio: 'inherit', env: process.env, windowsHide: true },
+  { stdio: 'inherit', env: webEnvironment, windowsHide: true },
 );
 child.once('error', () => {
   console.error('No se pudo arrancar Next.js.');

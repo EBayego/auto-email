@@ -47,6 +47,25 @@ function fixture() {
   return { f, input };
 }
 describe('MAIL-048 generación en el worker', () => {
+  it('MAIL-057 evita generar si otra ejecución confirma un envío entre las dos comprobaciones', async () => {
+    const { f, input } = fixture();
+    f.store.find.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: crypto.randomUUID(),
+      threadId: input.job.threadId,
+      targetMessageId: input.job.targetMessageId,
+      status: 'UNCERTAIN',
+      draftId: null,
+      draftMessageId: null,
+      verified: false,
+      sent: true,
+    });
+    expect(await generateEmailJobDraft(input)).toEqual({
+      status: 'SKIPPED',
+      reasonCode: 'ALREADY_ANSWERED',
+    });
+    expect(f.text.generate).not.toHaveBeenCalled();
+    expect(input.writer.create).not.toHaveBeenCalled();
+  });
   it('conecta selección, generación, doble verificación y escritor con lease', async () => {
     const { f, input } = fixture();
     expect(await generateEmailJobDraft(input)).toEqual({
@@ -125,5 +144,121 @@ describe('MAIL-048 generación en el worker', () => {
       reasonCode: 'STYLE_PROFILE_REQUIRED',
     });
     expect(f.text.generate).not.toHaveBeenCalled();
+  });
+  it.each(['before_selection', 'before_model', 'before_write'] as const)(
+    'respeta una parada en %s sin escribir un borrador',
+    async (phase) => {
+      const { f, input } = fixture(),
+        controller = new AbortController();
+      if (phase === 'before_selection') controller.abort();
+      if (phase === 'before_model')
+        input.assertLease.mockImplementation(async () => {
+          if (input.assertLease.mock.calls.length === 2) controller.abort();
+        });
+      if (phase === 'before_write')
+        input.assertLease.mockImplementation(async () => {
+          if (input.assertLease.mock.calls.length === 3) controller.abort();
+        });
+      expect(
+        await generateEmailJobDraft({ ...input, signal: controller.signal }),
+      ).toEqual({ status: 'REVIEW_REQUIRED', reasonCode: 'WORKER_STOPPED' });
+      expect(input.writer.create).not.toHaveBeenCalled();
+      expect(f.text.generate).toHaveBeenCalledTimes(
+        phase === 'before_write' ? 2 : 0,
+      );
+    },
+  );
+  it.each(['status', 'lease', 'classification'] as const)(
+    'rechaza un trabajo inválido por %s antes de cualquier acceso',
+    async (kind) => {
+      const { f, input } = fixture();
+      const job: EmailJob = {
+        ...input.job,
+        ...(kind === 'status'
+          ? { status: 'PENDING' }
+          : kind === 'lease'
+            ? { leaseId: null }
+            : { classification: null }),
+      };
+      await expect(generateEmailJobDraft({ ...input, job })).rejects.toThrow(
+        'INVALID_GENERATION_JOB',
+      );
+      expect(input.assertLease).not.toHaveBeenCalled();
+      expect(f.store.find).not.toHaveBeenCalled();
+      expect(f.text.generate).not.toHaveBeenCalled();
+      expect(input.writer.create).not.toHaveBeenCalled();
+    },
+  );
+  it('una respuesta ya enviada o un objetivo sustituido evitan llamar al modelo', async () => {
+    for (const kind of ['answered', 'superseded'] as const) {
+      const { f, input } = fixture();
+      const source = f.thread.messages[0],
+        id = kind === 'answered' ? 'sent64' : 'newIncoming64';
+      const latest = {
+        ...source,
+        id,
+        internalDate: String(Number(source.internalDate) + 60000),
+        labelIds: kind === 'answered' ? ['SENT'] : source.labelIds,
+        payload: {
+          ...source.payload,
+          headers: [
+            ...source.payload!.headers!.map((h) =>
+              h.name.toLowerCase() === 'message-id'
+                ? { ...h, value: `<${id}@example.invalid>` }
+                : kind === 'answered' && h.name.toLowerCase() === 'from'
+                  ? { ...h, value: 'owner@example.invalid' }
+                  : kind === 'answered' && h.name.toLowerCase() === 'to'
+                    ? { ...h, value: 'contact@example.invalid' }
+                    : h,
+            ),
+            ...(kind === 'answered'
+              ? [
+                  {
+                    name: 'In-Reply-To',
+                    value: `<${input.job.targetMessageId}@example.invalid>`,
+                  },
+                ]
+              : []),
+          ],
+        },
+      };
+      f.gmail.getThread.mockResolvedValue({
+        ...f.thread,
+        messages: [...f.thread.messages, latest],
+      });
+      expect(await generateEmailJobDraft(input)).toEqual({
+        status: 'SKIPPED',
+        reasonCode:
+          kind === 'answered' ? 'ALREADY_ANSWERED' : 'TARGET_SUPERSEDED',
+      });
+      expect(f.text.generate).not.toHaveBeenCalled();
+      expect(input.writer.create).not.toHaveBeenCalled();
+    }
+  });
+  it('una abstención del generador conserva la causa y no llega al escritor', async () => {
+    const { input } = fixture();
+    const generate = vi.fn().mockResolvedValue({
+      status: 'INSUFFICIENT_CONTEXT',
+      bodyText: null,
+      language: 'es',
+      missingInformation: [],
+      evidence: [],
+      warnings: ['HUMAN_REVIEW_REQUIRED'],
+      inputTokens: 0,
+      outputTokens: 0,
+      modelCalls: 0,
+      examplesUsed: 0,
+      sourcesUsed: [],
+    });
+    expect(
+      await generateEmailJobDraft({
+        ...input,
+        orchestration: { ...input.orchestration, generator: { generate } },
+      }),
+    ).toEqual({
+      status: 'REVIEW_REQUIRED',
+      reasonCode: 'RESPONSE_REQUIRES_REVIEW',
+    });
+    expect(input.writer.create).not.toHaveBeenCalled();
   });
 });

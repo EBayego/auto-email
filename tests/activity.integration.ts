@@ -1,3 +1,4 @@
+import { createAuthorizedTestUser } from './fixtures/privacy';
 import { beforeAll, afterAll, describe, it, expect } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/db/database.types';
@@ -48,7 +49,7 @@ describe('MAIL-054 actividad privada y trazabilidad con Supabase real', () => {
     for (let index = 0; index < 2; index++) {
       const email = `mail054-${crypto.randomUUID()}@example.invalid`,
         password = `Test-${crypto.randomUUID()}`;
-      const created = await service.auth.admin.createUser({
+      const created = await createAuthorizedTestUser(service, {
         email,
         password,
         email_confirm: true,

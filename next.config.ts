@@ -2,6 +2,9 @@ import type { NextConfig } from 'next';
 import { readFileSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { assertNoPublicSecrets } from './src/config/env';
+
+assertNoPublicSecrets();
 
 // The parser runs outside the Next.js bundle; include its complete dependency tree.
 const parserFiles = new Set(['./scripts/knowledge-parser.mjs']);
@@ -45,8 +48,41 @@ for (const name of ['pdfjs-dist', 'mammoth', 'yauzl', 'html-to-text'])
   traceParserPackage(name);
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   // Las instrucciones propias del repositorio se incorporarán en MAIL-010.
   agentRules: false,
+  poweredByHeader: false,
+  logging: {
+    incomingRequests: false,
+    serverFunctions: false,
+    browserToTerminal: false,
+    fetches: { fullUrl: false },
+  },
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=()',
+          },
+          {
+            key: 'Content-Security-Policy',
+            value:
+              "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self' https://accounts.google.com",
+          },
+          ...(process.env.APP_ENV === 'production' ||
+          process.env.APP_ENV === 'staging'
+            ? [{ key: 'Strict-Transport-Security', value: 'max-age=31536000' }]
+            : []),
+        ],
+      },
+    ];
+  },
   turbopack: {
     root: process.cwd(),
   },

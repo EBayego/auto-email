@@ -33,7 +33,7 @@ vi.mock('@/poc/sent-sample-store', () => ({
 vi.mock('@/worker/runtime', () => ({
   createWorkerRuntime: vi.fn(() => ({
     gmailFor: mocks.gmailFor,
-    providers: { text: { generate: mocks.generate } },
+    providersFor: () => ({ text: { generate: mocks.generate } }),
   })),
 }));
 const cases = () =>

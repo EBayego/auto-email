@@ -1,5 +1,6 @@
 import type { DataClient } from './models';
 import { DataAccessError } from './errors';
+import { enforcePrivacyConfiguration } from './privacy';
 import {
   reconciliationAttemptSchema,
   type ReconciliationAttempt,
@@ -11,6 +12,7 @@ export function createDraftReconciliationStore(client: DataClient) {
     async claim(limit: number): Promise<ReconciliationAttempt[]> {
       if (!Number.isInteger(limit) || limit < 1 || limit > 100)
         throw new DataAccessError('INVALID_INPUT');
+      await enforcePrivacyConfiguration(client);
       const { data, error } = await client.rpc('claim_draft_reconciliation', {
         p_limit: limit,
         p_lease_seconds: 120,

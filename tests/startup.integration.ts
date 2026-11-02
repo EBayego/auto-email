@@ -15,6 +15,7 @@ it('el arranque directo de Next.js valida también las credenciales antes de ate
     {
       env: {
         ...process.env,
+        AUTO_EMAIL_TEST_NETWORK_MODE: 'unit',
         APP_ENV: 'production',
         PROVIDER_MODE: 'live',
         APP_URL: 'https://mail.example.com',

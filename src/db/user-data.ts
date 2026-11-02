@@ -1,6 +1,10 @@
 import { DataAccessError } from './errors';
 import type { DataClient } from './models';
 import { createOwnerRepositories } from './repositories';
+import {
+  assertAccountNotErased,
+  SecurityStateError,
+} from '@/modules/security/erasure-ledger';
 
 export async function openUserDataAccess(client: DataClient) {
   try {
@@ -16,6 +20,7 @@ export async function openUserDataAccess(client: DataClient) {
     if (!user || user.is_anonymous || !user.email || !user.email_confirmed_at) {
       throw new DataAccessError('UNAUTHENTICATED');
     }
+    await assertAccountNotErased(user.id);
     const repositories = createOwnerRepositories(client, user.id);
     const profile = await repositories.users.get();
     if (!profile || profile.status !== 'ACTIVE')
@@ -31,6 +36,10 @@ export async function openUserDataAccess(client: DataClient) {
       }),
     });
   } catch (error) {
+    if (error instanceof SecurityStateError)
+      throw new DataAccessError(
+        error.code === 'ACCOUNT_ERASED' ? 'FORBIDDEN' : 'UNAVAILABLE',
+      );
     if (error instanceof DataAccessError) throw error;
     throw new DataAccessError('UNAVAILABLE');
   }

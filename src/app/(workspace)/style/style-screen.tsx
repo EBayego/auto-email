@@ -21,6 +21,7 @@ import {
   type StoredStylePreference,
 } from '@/modules/identity/style-preferences';
 import type { StyleScope } from '@/modules/identity/contextual-style';
+import { StyleLearningPanel } from './style-learning-panel';
 
 export function StyleScreen({ initial }: { initial: StyleEditorSnapshot }) {
   const [snapshot, setSnapshot] = useState(initial);
@@ -204,6 +205,7 @@ export function StyleScreen({ initial }: { initial: StyleEditorSnapshot }) {
         confirmNotice={lastAction === 'confirm' ? notice : null}
       />
       <ContextComparison profiles={snapshot.profiles} />
+      <StyleLearningPanel disabled={busy || dirty} onChanged={reload} />
     </>
   );
 }

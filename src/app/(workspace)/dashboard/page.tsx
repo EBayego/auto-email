@@ -91,6 +91,15 @@ export default async function DashboardPage({
           Ver actividad →
         </Link>
       </Panel>
+      <Panel title="Uso, calidad y costes">
+        <p className="description">
+          Consulta los envíos confirmados, las correcciones y el coste estimado
+          de las generaciones.
+        </p>
+        <Link className="text-link" href="/analytics">
+          Ver métricas →
+        </Link>
+      </Panel>
       <div className="workspace-grid">
         <Panel title="Tu forma de escribir">
           <p className="description">

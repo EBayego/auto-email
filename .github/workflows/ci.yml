@@ -22,7 +22,7 @@ jobs:
   quality:
     name: Calidad e integración
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - name: Obtener código
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -57,8 +57,50 @@ jobs:
       - name: Verificar SQL y aislamiento por usuario
         run: npm run db:check
 
-      - name: Pruebas de integración de la aplicación
+      - name: Pruebas de integración con red limitada a los servicios locales
         run: npm run test:integration
+
+      - name: Instalar Chromium para la regresión funcional
+        run: npx playwright install --with-deps chromium
+
+      - name: Regresión end-to-end crítica antes de desplegar
+        run: npm run test:e2e
+
+      - name: Auditar dependencias de producción
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Probar imágenes, reinicios y restauración cifrada
+        run: npm run test:deployment
+
+      - name: Guardar evidencia de despliegue y recuperación
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: deployment-recovery
+          path: coverage/deployment-report.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Guardar resultados de las suites
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: test-results
+          path: |
+            coverage/unit/junit.xml
+            coverage/integration/junit.xml
+            coverage/e2e/junit.xml
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Guardar informe y trazas end-to-end
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: e2e-regression
+          path: coverage/e2e/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Guardar informe de cobertura
         if: always()

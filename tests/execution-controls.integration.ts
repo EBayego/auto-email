@@ -1,3 +1,4 @@
+import { createAuthorizedTestUser } from './fixtures/privacy';
 import {
   afterAll,
   beforeAll,
@@ -120,7 +121,7 @@ describe('MAIL-035 controles HTTP y worker con PostgreSQL real', () => {
     for (let i = 0; i < 2; i++) {
       const email = `mail035-${crypto.randomUUID()}@example.invalid`,
         password = `Mail035-${crypto.randomUUID()}!`;
-      const user = await service.auth.admin.createUser({
+      const user = await createAuthorizedTestUser(service, {
         email,
         password,
         email_confirm: true,

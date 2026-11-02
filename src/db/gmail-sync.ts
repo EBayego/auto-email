@@ -1,6 +1,7 @@
 import type { DataClient } from './models';
 import { DataAccessError, requireUuid } from './errors';
 import type { GmailSyncStore, SyncClaim } from '@/worker/sync';
+import { enforcePrivacyConfiguration } from './privacy';
 
 function parameters(claim: SyncClaim) {
   requireUuid(claim.userId);
@@ -29,6 +30,7 @@ async function checked<T>(
 export function createGmailSyncStore(client: DataClient): GmailSyncStore {
   return Object.freeze({
     async claim(config) {
+      await enforcePrivacyConfiguration(client);
       const rows = await checked(
         client.rpc('claim_gmail_sync', {
           p_lease_seconds: config.leaseSeconds,

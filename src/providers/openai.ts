@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { observe } from '@/modules/observability/telemetry';
 import type { ServerConfig } from '@/config/env';
 import type { TextGenerationClient, TextGenerationInput } from './contracts';
 import { ProviderError, providerFailure } from './errors';
@@ -47,44 +48,60 @@ export function createOpenAiClient(
             async (remainingMs) => {
               try {
                 modelCalls++;
-                return await client.responses.create(
-                  {
-                    model: config.model,
-                    instructions:
-                      attempt === 0
-                        ? input.instructions
-                        : input.instructions +
-                          '\nLa salida anterior no cumplió el formato completo requerido. Devuelve JSON compacto: exactamente un objeto, sin una segunda versión ni objetos concatenados, sin redundancias y con citas breves literales suficientes. Conserva todas las preguntas esenciales, las restricciones, el estilo solicitado y la verificación factual; si faltan datos, abstente.',
-                    input: [
+                return await observe(
+                  'OPENAI',
+                  () =>
+                    client.responses.create(
                       {
-                        role: 'user',
-                        content: [{ type: 'input_text', text: input.input }],
-                      },
-                    ],
-                    tool_choice: 'none',
-                    max_output_tokens: config.maxOutputTokens,
-                    store: false,
-                    ...(config.reasoningEffort === 'omit'
-                      ? {}
-                      : { reasoning: { effort: config.reasoningEffort } }),
-                    ...(input.jsonSchema
-                      ? {
-                          text: {
-                            format: {
-                              type: 'json_schema',
-                              name: input.jsonSchema.name,
-                              schema: input.jsonSchema.schema,
-                              strict: true,
-                            },
+                        model: config.model,
+                        instructions:
+                          attempt === 0
+                            ? input.instructions
+                            : input.instructions +
+                              '\nLa salida anterior no cumplió el formato completo requerido. Devuelve JSON compacto: exactamente un objeto, sin una segunda versión ni objetos concatenados, sin redundancias y con citas breves literales suficientes. Conserva todas las preguntas esenciales, las restricciones, el estilo solicitado y la verificación factual; si faltan datos, abstente.',
+                        input: [
+                          {
+                            role: 'user',
+                            content: [
+                              { type: 'input_text', text: input.input },
+                            ],
                           },
-                        }
-                      : {}),
-                  },
-                  {
-                    timeout: Math.max(
-                      1,
-                      Math.min(timeoutMs, remainingMs ?? timeoutMs),
+                        ],
+                        tool_choice: 'none',
+                        max_output_tokens: config.maxOutputTokens,
+                        store: false,
+                        background: false,
+                        ...(config.reasoningEffort === 'omit'
+                          ? {}
+                          : { reasoning: { effort: config.reasoningEffort } }),
+                        ...(input.jsonSchema
+                          ? {
+                              text: {
+                                format: {
+                                  type: 'json_schema',
+                                  name: input.jsonSchema.name,
+                                  schema: input.jsonSchema.schema,
+                                  strict: true,
+                                },
+                              },
+                            }
+                          : {}),
+                      },
+                      {
+                        timeout: Math.max(
+                          1,
+                          Math.min(timeoutMs, remainingMs ?? timeoutMs),
+                        ),
+                      },
                     ),
+                  {
+                    usage: (value) =>
+                      value.usage
+                        ? {
+                            inputTokens: value.usage.input_tokens,
+                            outputTokens: value.usage.output_tokens,
+                          }
+                        : null,
                   },
                 );
               } catch (error) {

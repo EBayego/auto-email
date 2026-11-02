@@ -7,6 +7,7 @@ insert into auth.users (id, aud, role, email, raw_user_meta_data)
 values
   ('00000000-0000-4000-8000-000000000071', 'authenticated', 'authenticated', 'mail007-a@example.invalid', '{"status":"DISABLED","user_id":"00000000-0000-4000-8000-000000000072"}'),
   ('00000000-0000-4000-8000-000000000072', 'authenticated', 'authenticated', 'mail007-b@example.invalid', '{}');
+\ir fixtures/privacy.inc
 
 select is((select status from public.users where id = '00000000-0000-4000-8000-000000000071'), 'ACTIVE', 'El alta usa auth.users.id e ignora los metadatos editables');
 select is((select count(*) from public.user_settings where user_id in ('00000000-0000-4000-8000-000000000071', '00000000-0000-4000-8000-000000000072')), 2::bigint, 'Cada identidad recibe sus ajustes');
@@ -20,6 +21,7 @@ select ok(not has_function_privilege('anon', 'private.provision_app_user()', 'ex
 
 insert into auth.users (id, aud, role, is_anonymous)
 values ('00000000-0000-4000-8000-000000000073', 'authenticated', 'authenticated', true);
+\ir fixtures/privacy.inc
 select is((select count(*) from public.users where id = '00000000-0000-4000-8000-000000000073'), 0::bigint, 'Las identidades anónimas no reciben una cuenta de aplicación');
 
 grant usage on schema extensions to authenticated, anon;

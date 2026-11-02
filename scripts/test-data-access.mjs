@@ -1,8 +1,49 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { randomBytes, randomUUID } from 'node:crypto';
+import path from 'node:path';
+import { testProcessEnvironment } from './test-environment.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+const e2e = process.argv[2] === '--e2e';
+const privacyEnvironment = JSON.parse(
+  readFileSync(
+    new URL('../tests/fixtures/privacy-env.json', import.meta.url),
+    'utf8',
+  ),
+);
+const securityEnvironment = {
+  ERASURE_LEDGER_DIRECTORY: path.join(
+    root,
+    '.cache',
+    `integration-erasures-${randomUUID()}`,
+  ),
+  ERASURE_LEDGER_ENCRYPTION_KEY: randomBytes(32).toString('base64'),
+  SECURITY_MAINTENANCE_MODE: 'false',
+};
+const initialized = spawnSync(
+  process.execPath,
+  [
+    '--import',
+    'tsx',
+    'scripts/security-maintenance.ts',
+    '--action',
+    'init',
+    '--confirmed',
+  ],
+  {
+    cwd: root,
+    env: { ...process.env, APP_ENV: 'test', ...securityEnvironment },
+    encoding: 'utf8',
+    windowsHide: true,
+  },
+);
+if (initialized.status !== 0)
+  throw new Error(
+    'No se pudo inicializar el registro de supresiones de pruebas.',
+  );
 const cli = spawnSync(
   process.execPath,
   [
@@ -58,9 +99,13 @@ const server = spawn(
   ],
   {
     cwd: root,
-    env: {
-      ...process.env,
+    env: testProcessEnvironment({
+      AUTO_EMAIL_TEST_NETWORK_MODE: 'integration',
+      AUTO_EMAIL_TEST_URL: url.origin,
+      AUTO_EMAIL_TEST_APP_URL: origin,
       APP_ENV: 'test',
+      ...privacyEnvironment,
+      ...securityEnvironment,
       PROVIDER_MODE: 'mock',
       SUPABASE_SECRET_KEY: config.SECRET_KEY,
       PROVIDER_TIMEOUT_MS: '30000',
@@ -71,7 +116,7 @@ const server = spawn(
       GOOGLE_CLIENT_ID: '',
       GOOGLE_CLIENT_SECRET: '',
       NEXT_TELEMETRY_DISABLED: '1',
-    },
+    }),
     stdio: 'ignore',
     windowsHide: true,
   },
@@ -97,18 +142,35 @@ try {
     process.execPath,
     [
       fileURLToPath(
-        new URL('../node_modules/vitest/vitest.mjs', import.meta.url),
+        new URL(
+          e2e
+            ? '../node_modules/@playwright/test/cli.js'
+            : '../node_modules/vitest/vitest.mjs',
+          import.meta.url,
+        ),
       ),
-      'run',
+      e2e ? 'test' : 'run',
       '--config',
-      'vitest.integration.config.mts',
-      ...process.argv.slice(2),
+      e2e ? 'playwright.config.ts' : 'vitest.integration.config.mts',
+      ...process.argv.slice(e2e ? 3 : 2),
     ],
     {
       cwd: root,
-      env: {
-        ...process.env,
+      env: testProcessEnvironment({
+        AUTO_EMAIL_TEST_NETWORK_MODE: 'integration',
+        ...(e2e
+          ? {
+              WORKER_GMAIL_REQUESTS_PER_MINUTE: '10000',
+              WORKER_GMAIL_ACCOUNT_REQUESTS_PER_MINUTE: '1000',
+              WORKER_OPENAI_REQUESTS_PER_MINUTE: '10000',
+              WORKER_OPENAI_ACCOUNT_REQUESTS_PER_MINUTE: '1000',
+              WORKER_PROVIDER_BASE_DELAY_MS: '100',
+              WORKER_PROVIDER_MAX_DELAY_MS: '100',
+            }
+          : {}),
         APP_ENV: 'test',
+        ...privacyEnvironment,
+        ...securityEnvironment,
         PROVIDER_MODE: 'mock',
         APP_URL: origin,
         SUPABASE_URL: url.origin,
@@ -122,7 +184,7 @@ try {
         AUTO_EMAIL_TEST_PUBLISHABLE_KEY: config.PUBLISHABLE_KEY,
         AUTO_EMAIL_TEST_SECRET_KEY: config.SECRET_KEY,
         AUTO_EMAIL_TEST_APP_URL: origin,
-      },
+      }),
       stdio: 'inherit',
       windowsHide: true,
     },

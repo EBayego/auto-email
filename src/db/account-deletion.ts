@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { DataAccessError, requireUuid } from './errors';
 import type { DataClient } from './models';
+import { getErasureLedger } from '@/modules/security/erasure-ledger';
 import { SecretValue } from '@/config/env';
 import {
   AccountDeletionError,
@@ -42,6 +43,19 @@ export function createAccountLifecycleRepository(
       if (error || data !== true) throw new DataAccessError('UNAVAILABLE');
     },
     async requestDeletion(receipt: string) {
+      const owner = await client
+        .from('users')
+        .select('status')
+        .eq('id', userId)
+        .maybeSingle();
+      if (owner.error) throw new DataAccessError('UNAVAILABLE');
+      if (
+        !owner.data ||
+        !['ACTIVE', 'DELETION_PENDING'].includes(owner.data.status)
+      )
+        throw new DataAccessError('FORBIDDEN');
+      // Persist outside the database backup before acknowledging an erasure.
+      await getErasureLedger()?.record(userId);
       const { data, error } = await client.rpc('request_account_deletion', {
         p_user_id: userId,
         p_receipt_hash: deletionReceiptHash(receipt),
@@ -170,6 +184,7 @@ export function createAccountDeletionStore(
     },
     async deleteIdentity(task) {
       await checkpoint(task);
+      await getErasureLedger()?.record(task.userId!);
       const result = await client.auth.admin.deleteUser(task.userId!);
       if (result.error) throw new AccountDeletionError('AUTH_UNAVAILABLE');
     },
