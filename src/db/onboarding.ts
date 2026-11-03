@@ -95,15 +95,35 @@ export function createOnboardingWorkerStore(client: DataClient) {
       scanned: number,
       selected: number,
     ) {
-      const { data, error } = await client.rpc('advance_onboarding_analysis', {
-        p_user_id: job.user_id,
-        p_lease_id: job.lease_id!,
-        p_phase: phase,
-        p_scanned: scanned,
-        p_selected: selected,
-      });
-      failure(error);
-      if (!data) throw new OnboardingError('CANCELLED');
+      // Repeating this checkpoint with the same lease and counters is safe.
+      // The database rechecks consent, account state and lease expiry each time.
+      for (let attempt = 0; ; attempt++) {
+        const { data, error, status } = await client.rpc(
+          'advance_onboarding_analysis',
+          {
+            p_user_id: job.user_id,
+            p_lease_id: job.lease_id!,
+            p_phase: phase,
+            p_scanned: scanned,
+            p_selected: selected,
+          },
+        );
+        const transient =
+          error &&
+          (status === 0 ||
+            status === 429 ||
+            status >= 500 ||
+            ['40001', '40P01', '57014', 'PGRST003'].includes(error.code));
+        if (transient && attempt < 2) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, 250 * (attempt + 1)),
+          );
+          continue;
+        }
+        failure(error);
+        if (!data) throw new OnboardingError('CANCELLED');
+        break;
+      }
     },
     async finish(
       job: AnalysisJob,

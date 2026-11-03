@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runOnboardingAnalysis } from './onboarding';
 import { OnboardingError } from '@/modules/identity/onboarding';
 import { ProviderError } from '@/providers/errors';
+import { DataAccessError } from '@/db/errors';
 import { writingProfileFixture } from '../../tests/fixtures/writing-profile';
 import {
   sentMailbox,
@@ -122,6 +123,40 @@ describe('MAIL-051 análisis de historial en el worker', () => {
     );
     expect(await run()).toEqual({ failed: true });
     expect(finish).toHaveBeenCalledWith(job, { error: 'REAUTH_REQUIRED' });
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reasonCode: 'REAUTH_REQUIRED',
+        errorCode: 'PERMISSION_DENIED',
+        provider: 'google',
+        phase: 'SAMPLING',
+      }),
+    );
+  });
+  it('identifica el fallo de almacenamiento y conserva los contadores sin contenido privado', async () => {
+    advance.mockRejectedValueOnce(new DataAccessError('UNAVAILABLE'));
+    expect(await run()).toEqual({ failed: true });
+    expect(report).toHaveBeenCalledWith({
+      type: 'ONBOARDING_FAILED',
+      reasonCode: 'UNAVAILABLE',
+      errorCode: 'DATABASE_UNAVAILABLE',
+      phase: 'SAMPLING',
+      scanned: 0,
+      selected: 0,
+    });
+    expect(generate).not.toHaveBeenCalled();
+  });
+  it('distingue el fallo al guardar un perfil de la preparación de la muestra', async () => {
+    finish.mockRejectedValueOnce(new DataAccessError('UNAVAILABLE'));
+    expect(await run()).toEqual({ failed: true });
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'ONBOARDING_FAILED',
+        errorCode: 'DATABASE_UNAVAILABLE',
+        phase: 'SAVING',
+        scanned: 3,
+        selected: 3,
+      }),
+    );
   });
   it('aplica las exclusiones antes de leer el cuerpo y generar el perfil', async () => {
     advance.mockResolvedValue(undefined);

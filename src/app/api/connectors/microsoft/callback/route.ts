@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getAuthConfig } from '@/modules/auth/config';
 import { getSharePointContext } from '@/app/_lib/sharepoint';
 import { microsoftOAuthCookie } from '@/modules/sharepoint/auth';
-import { SharePointError } from '@/modules/sharepoint/contracts';
+import { microsoftOAuthErrorCode } from '@/modules/sharepoint/oauth-errors';
+import { logOperationalEvent } from '@/modules/security/operational-log';
 import { privateHeaders } from '@/app/api/knowledge/http';
 
 export const runtime = 'nodejs';
@@ -17,8 +18,11 @@ export async function GET(request: NextRequest) {
       request.cookies.get(microsoftOAuthCookie)?.value,
     );
   } catch (error) {
-    result =
-      error instanceof SharePointError ? error.code : 'MICROSOFT_UNAVAILABLE';
+    result = microsoftOAuthErrorCode(error);
+    logOperationalEvent({
+      type: 'MICROSOFT_CONNECTION_FAILED',
+      reasonCode: result,
+    });
   }
   const response = NextResponse.redirect(
     new URL(

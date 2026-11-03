@@ -94,6 +94,7 @@ export function createMicrosoftAuth(
         scopes,
         redirectUri: config.redirectUri,
         codeVerifier: verifier,
+        nonce,
       });
       const claims = result.idTokenClaims as Record<string, unknown>;
       if (

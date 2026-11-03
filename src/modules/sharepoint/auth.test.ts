@@ -150,6 +150,12 @@ describe('Microsoft OAuth', () => {
     await expect(
       f.auth.complete(new URLSearchParams({ state, code: 'code' }), state),
     ).resolves.toEqual({ id: user });
+    expect(sdk.code).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nonce,
+        redirectUri: config.redirectUri,
+      }),
+    );
     const saved = f.command.mock.calls.find(
       (call) => call[0] === 'connection_save',
     )![1];

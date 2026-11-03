@@ -7,6 +7,7 @@ import {
 import { WritingProfileError } from '@/modules/identity/writing-profile';
 import { GmailCredentialError } from '@/modules/gmail/credentials';
 import { ProviderError } from '@/providers/errors';
+import { DataAccessError } from '@/db/errors';
 import type { GmailClient, TextGenerationClient } from '@/providers/contracts';
 import type { AnalysisJob, createOnboardingWorkerStore } from '@/db/onboarding';
 import type { OwnedWorkItem } from './data-access';
@@ -15,6 +16,11 @@ import type { WritingProfileWarning } from '@/db/writing-profiles';
 export type OnboardingEvent = {
   type: 'ONBOARDING_COMPLETED' | 'ONBOARDING_FAILED';
   reasonCode?: string;
+  errorCode?: string;
+  phase?: 'SAMPLING' | 'ANALYZING' | 'SAVING';
+  scanned?: number;
+  selected?: number;
+  provider?: 'google' | 'openai';
 };
 
 export function analysisErrorCode(error: unknown) {
@@ -60,6 +66,7 @@ export async function runOnboardingAnalysis(input: {
   let phase: 'SAMPLING' | 'ANALYZING' = 'SAMPLING',
     scanned = 0,
     selected = 0;
+  let saving = false;
   const assertActive = async () => {
     if (input.signal?.aborted) throw new OnboardingError('CANCELLED');
     await input.store.advance(job, phase, scanned, selected);
@@ -126,6 +133,7 @@ export async function runOnboardingAnalysis(input: {
     const warnings: WritingProfileWarning[] = [];
     if (selected < 200) warnings.push('BELOW_RECOMMENDED_SIZE');
     if (generated.truncatedMessages) warnings.push('INPUT_TRUNCATED');
+    saving = true;
     await input.store.finish(job, {
       generation: {
         ...generated,
@@ -135,7 +143,7 @@ export async function runOnboardingAnalysis(input: {
         warnings,
       },
     });
-    input.report?.({ type: 'ONBOARDING_COMPLETED' });
+    input.report?.({ type: 'ONBOARDING_COMPLETED', scanned, selected });
     return { failed: false };
   } catch (error) {
     const code = analysisErrorCode(error);
@@ -144,7 +152,22 @@ export async function runOnboardingAnalysis(input: {
     } catch {
       /* A cancelled or expired lease cannot publish a result. */
     }
-    input.report?.({ type: 'ONBOARDING_FAILED', reasonCode: code });
+    input.report?.({
+      type: 'ONBOARDING_FAILED',
+      reasonCode: code,
+      errorCode:
+        error instanceof DataAccessError || error instanceof OnboardingError
+          ? error.code === 'UNAVAILABLE'
+            ? 'DATABASE_UNAVAILABLE'
+            : error.code
+          : error instanceof ProviderError
+            ? error.code
+            : code,
+      phase: saving ? 'SAVING' : phase,
+      scanned,
+      selected,
+      ...(error instanceof ProviderError ? { provider: error.provider } : {}),
+    });
     return { failed: code !== 'CANCELLED' };
   }
 }

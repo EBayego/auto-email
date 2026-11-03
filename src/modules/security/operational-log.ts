@@ -15,6 +15,7 @@ const eventTypes = new Set([
   'PROVIDER_FAILED',
   'ONBOARDING_COMPLETED',
   'ONBOARDING_FAILED',
+  'MICROSOFT_CONNECTION_FAILED',
   'SENT_DRAFT_CHECKED',
   'SENT_DRAFT_CHECK_FAILED',
   'REPLY_COMPARISON_COMPLETED',
@@ -56,6 +57,20 @@ const codes = new Set([
   'DATABASE_UNAVAILABLE',
   'STORAGE_UNAVAILABLE',
   'AUTH_UNAVAILABLE',
+  'INVALID_OAUTH_STATE',
+  'MICROSOFT_IDENTITY_REJECTED',
+  'MICROSOFT_CLIENT_SECRET_INVALID',
+  'MICROSOFT_CLIENT_SECRET_EXPIRED',
+  'MICROSOFT_APPLICATION_NOT_FOUND',
+  'MICROSOFT_CONSENT_REQUIRED',
+  'MICROSOFT_SCOPE_REQUIRED',
+  'MICROSOFT_CODE_REJECTED',
+  'SESSION_REQUIRED',
+  'PRIVACY_CONSENT_REQUIRED',
+  'CONNECTOR_UNAVAILABLE',
+  'CONNECTOR_DISABLED',
+  'CREDENTIAL_UNAVAILABLE',
+  'MICROSOFT_UNAVAILABLE',
 ]);
 const reasons = new Set(codes);
 for (const prefix of ['', 'SYNC_', 'JOB_', 'SYNC_GOOGLE_', 'SYNC_OPENAI_'])
@@ -105,6 +120,13 @@ export function safeOperationalEvent(value: unknown) {
       safe[key] = reasons.has(raw[key]) ? raw[key] : 'OTHER';
   if (raw.provider === 'google' || raw.provider === 'openai')
     safe.provider = raw.provider;
+  if (
+    ['ONBOARDING_COMPLETED', 'ONBOARDING_FAILED'].includes(
+      safe.type as string,
+    ) &&
+    ['SAMPLING', 'ANALYZING', 'SAVING'].includes(raw.phase as string)
+  )
+    safe.phase = raw.phase as string;
   return safe;
 }
 export function logOperationalEvent(value: unknown) {

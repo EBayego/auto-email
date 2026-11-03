@@ -141,6 +141,7 @@ export function createWorkerRuntime(
             config: requestConfig,
             signal: controls.signal,
             accountId: work.gmailAccountId,
+            report: controls.report,
           });
           const execute: typeof base = (provider, safe, operation, before) =>
             base(

@@ -1,6 +1,47 @@
 import { describe, expect, it, vi } from 'vitest';
 import { safeOperationalEvent, logOperationalEvent } from './operational-log';
 describe('MAIL-062 logs operativos sin datos personales', () => {
+  it('registra fallos de Microsoft sin códigos OAuth ni respuestas privadas', () => {
+    expect(
+      safeOperationalEvent({
+        type: 'MICROSOFT_CONNECTION_FAILED',
+        reasonCode: 'MICROSOFT_IDENTITY_REJECTED',
+        token: 'private-token',
+        code: 'private-code',
+        error: new Error('private-provider-response'),
+      }),
+    ).toEqual({
+      type: 'MICROSOFT_CONNECTION_FAILED',
+      reasonCode: 'MICROSOFT_IDENTITY_REJECTED',
+    });
+  });
+  it('conserva la fase del análisis y rechaza fases o campos arbitrarios', () => {
+    expect(
+      safeOperationalEvent({
+        type: 'ONBOARDING_FAILED',
+        phase: 'SAMPLING',
+        scanned: 37,
+        selected: 0,
+        errorCode: 'DATABASE_UNAVAILABLE',
+        body: 'private-body',
+      }),
+    ).toEqual({
+      type: 'ONBOARDING_FAILED',
+      phase: 'SAMPLING',
+      scanned: 37,
+      selected: 0,
+      errorCode: 'DATABASE_UNAVAILABLE',
+    });
+    expect(
+      safeOperationalEvent({
+        type: 'ONBOARDING_FAILED',
+        phase: 'private-data',
+      }),
+    ).toEqual({ type: 'ONBOARDING_FAILED' });
+    expect(
+      safeOperationalEvent({ type: 'JOB_PROCESSED', phase: 'SAMPLING' }),
+    ).toEqual({ type: 'JOB_PROCESSED' });
+  });
   it('omite tokens, cuerpos, adjuntos, rutas, errores e identificadores aunque un evento futuro los añada', () => {
     const event = {
       type: 'JOB_PROCESSED',

@@ -6,6 +6,7 @@ import type {
   SharePointConnector,
   SyncedItem,
 } from '@/modules/sharepoint/contracts';
+import { MicrosoftConnectionNotice } from './microsoft-connection-notice';
 
 type Entry = { id: string; name?: string; webUrl?: string };
 type Browse = {
@@ -43,7 +44,9 @@ const errors: Record<string, string> = {
   PRIVACY_CONSENT_REQUIRED:
     'Revisa y acepta la información de privacidad antes de conectar o consultar SharePoint.',
 };
-export function SharePointPanel() {
+export function SharePointPanel({
+  oauthResult,
+}: { oauthResult?: string } = {}) {
   const [snapshot, setSnapshot] = useState<ConnectorSnapshot | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -75,20 +78,6 @@ export function SharePointPanel() {
     void Promise.resolve()
       .then(() => {
         if (active) return load();
-      })
-      .then(() => {
-        if (active) {
-          const result = new URLSearchParams(window.location.search).get(
-            'microsoft',
-          );
-          if (result)
-            setMessage(
-              result === 'CONNECTED'
-                ? 'Cuenta Microsoft conectada.'
-                : (errors[result] ??
-                    'No se pudo completar la conexión Microsoft.'),
-            );
-        }
       })
       .catch(() => {
         if (active) setMessage('No se han podido cargar las conexiones.');
@@ -249,6 +238,7 @@ export function SharePointPanel() {
       aria-busy={busy}
     >
       <h2 id="sharepoint-title">Carpetas de SharePoint</h2>
+      <MicrosoftConnectionNotice result={oauthResult} />
       <p className="description">
         Conecta carpetas y subcarpetas de Microsoft 365. El contenido se indexa
         y se actualiza periódicamente; se comprueban los permisos y la versión
@@ -277,6 +267,11 @@ export function SharePointPanel() {
         </p>
       ) : (
         <>
+          <p className="form-message" role="status">
+            {snapshot.connections.length
+              ? `Cuentas Microsoft vinculadas: ${snapshot.connections.length}.`
+              : 'No hay ninguna cuenta Microsoft vinculada.'}
+          </p>
           <p className="description">
             PDF, Word, TXT, Excel, CSV, PowerPoint, Markdown y HTML. OCR de
             escaneos e imágenes:{' '}
@@ -317,7 +312,9 @@ export function SharePointPanel() {
               Document Intelligence.
             </label>
             <button className="button button-secondary" disabled={busy || !ack}>
-              Conectar cuenta Microsoft
+              {snapshot.connections.length
+                ? 'Conectar otra cuenta Microsoft'
+                : 'Conectar cuenta Microsoft'}
             </button>
           </form>
           <ul className="documents-list">
